@@ -1,0 +1,10 @@
+{
+	"id": "base-charts",
+	"name": "Base Charts",
+	"version": "1.0.0",
+	"minAppVersion": "1.10.0",
+	"description": "Animated chart layouts for Obsidian Bases: bar, line, pie, and more.",
+	"author": "David Schimke",
+	"authorUrl": "https://github.com/Scymon",
+	"isDesktopOnly": false
+}
