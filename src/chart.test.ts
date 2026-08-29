@@ -101,7 +101,7 @@ describe('buildChartOption', () => {
 		assert.equal(xAxis.axisLabel?.interval, 0);
 		assert.equal(xAxis.axisLabel?.hideOverlap, false);
 		assert.ok((xAxis.axisLabel?.rotate ?? 0) > 0);
-		assert.ok((grid.bottom ?? 0) >= 80);
+		assert.ok((grid.bottom ?? 0) >= 100);
 	});
 
 	it('shows every category label on horizontal bar and heatmap axes', () => {

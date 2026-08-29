@@ -35,14 +35,14 @@ function categoryAxisLabel(theme: ChartTheme, placement: 'bottom' | 'left') {
 		color: theme.muted,
 		interval: 0,
 		hideOverlap: false,
-		rotate: placement === 'bottom' ? 40 : 0,
+		rotate: placement === 'bottom' ? 45 : 0,
 	};
 }
 
 function cartesianGrid(horizontal: boolean) {
 	return horizontal
 		? { top: 40, right: 24, bottom: 32, left: 28, containLabel: true }
-		: { top: 40, right: 16, bottom: 88, left: 16, containLabel: true };
+		: { top: 40, right: 24, bottom: 120, left: 16, containLabel: true };
 }
 
 function labelStyle(theme: ChartTheme, show: boolean) {
@@ -216,7 +216,7 @@ export function buildChartOption(
 			backgroundColor: theme.background,
 			color: colors,
 			tooltip: { ...tooltipBase(theme), trigger: 'item' },
-			grid: { top: 40, right: 24, bottom: 96, left: 72, containLabel: true },
+			grid: { top: 40, right: 24, bottom: 120, left: 72, containLabel: true },
 			xAxis: {
 				type: 'category',
 				data: data.categories,
