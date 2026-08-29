@@ -39,7 +39,7 @@ function labelStyle(theme: ChartTheme, show: boolean) {
 function tooltipBase(theme: ChartTheme) {
 	return {
 		trigger: 'axis' as const,
-		backgroundColor: theme.background === 'transparent' ? 'rgba(0,0,0,0.72)' : theme.background,
+		backgroundColor: theme.panel,
 		borderColor: theme.border,
 		textStyle: { color: theme.text },
 	};

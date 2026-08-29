@@ -71,6 +71,7 @@ export interface AggregatedChart {
 
 export interface ChartTheme {
 	background: string;
+	panel: string;
 	text: string;
 	muted: string;
 	border: string;

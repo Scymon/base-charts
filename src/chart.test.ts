@@ -6,6 +6,7 @@ import { DEFAULT_EXCLUDED_TAGS, type ChartSettings, type ChartTheme } from './ty
 
 const theme: ChartTheme = {
 	background: 'transparent',
+	panel: '#1e1e1e',
 	text: '#ddd',
 	muted: '#999',
 	border: '#333',
