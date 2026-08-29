@@ -65,4 +65,61 @@ describe('buildChartOption', () => {
 		assert.equal(legend.textStyle?.color, theme.muted);
 		assert.equal(option.backgroundColor, 'transparent');
 	});
+
+	it('shows every rotated X label on a dense vertical bar chart', () => {
+		const urls = [
+			'https://x.com/jammles9',
+			'https://x.com/alpha',
+			'https://x.com/bravo',
+			'https://x.com/charlie',
+			'https://x.com/delta',
+			'https://x.com/tyleraloevera',
+			'https://x.com/echo',
+			'https://x.com/foxtrot',
+			'https://x.com/golf',
+			'https://x.com/hotel',
+			'https://x.com/JUFUR',
+			'https://x.com/india',
+		];
+		const dense = aggregateRows(
+			urls.map((url, index) => ({
+				xLabels: [url],
+				seriesLabels: [],
+				y: 12000 - index * 700,
+				xNumeric: null,
+				fileName: `short-${index}`,
+			})),
+			settings(),
+		);
+		const option = buildChartOption(dense, settings(), theme, false);
+		const xAxis = option.xAxis as {
+			data?: string[];
+			axisLabel?: { interval?: number | string; hideOverlap?: boolean; rotate?: number };
+		};
+		const grid = option.grid as { bottom?: number };
+		assert.equal(xAxis.data?.length, 12);
+		assert.equal(xAxis.axisLabel?.interval, 0);
+		assert.equal(xAxis.axisLabel?.hideOverlap, false);
+		assert.ok((xAxis.axisLabel?.rotate ?? 0) > 0);
+		assert.ok((grid.bottom ?? 0) >= 80);
+	});
+
+	it('shows every category label on horizontal bar and heatmap axes', () => {
+		const horizontal = buildChartOption(data, settings({ chartType: 'bar-horizontal' }), theme, false);
+		const yAxis = horizontal.yAxis as {
+			axisLabel?: { interval?: number | string; hideOverlap?: boolean; rotate?: number };
+		};
+		assert.equal(yAxis.axisLabel?.interval, 0);
+		assert.equal(yAxis.axisLabel?.hideOverlap, false);
+		assert.equal(yAxis.axisLabel?.rotate ?? 0, 0);
+
+		const heat = buildChartOption(data, settings({ chartType: 'heatmap' }), theme, false);
+		const heatX = heat.xAxis as { axisLabel?: { interval?: number; hideOverlap?: boolean; rotate?: number } };
+		const heatY = heat.yAxis as { axisLabel?: { interval?: number; hideOverlap?: boolean } };
+		assert.equal(heatX.axisLabel?.interval, 0);
+		assert.equal(heatX.axisLabel?.hideOverlap, false);
+		assert.ok((heatX.axisLabel?.rotate ?? 0) > 0);
+		assert.equal(heatY.axisLabel?.interval, 0);
+		assert.equal(heatY.axisLabel?.hideOverlap, false);
+	});
 });
