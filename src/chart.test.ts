@@ -30,6 +30,11 @@ import {
 	treemapLabelLayout,
 	usesCartesianGrid,
 } from './chart.ts';
+import {
+	AXIS_ELLIPSIS_LABEL,
+	DEFAULT_AXIS_LENGTH,
+	planCategoryAxisTicks,
+} from './axisLabels.ts';
 import { pickOpenNote, resolveClickNotes, shouldOpenNotesOnClick } from './click.ts';
 import { CHART_TYPES, DEFAULT_EXCLUDED_TAGS, type ChartSettings, type ChartTheme, type RawRow } from './types.ts';
 
@@ -842,17 +847,92 @@ describe('buildChartOption', () => {
 		const option = buildChartOption(dense, settings({ maxCategories: 80 }), theme, false);
 		const xAxis = firstOf(
 			option.xAxis as {
-				axisLabel?: { interval?: (index: number) => boolean; rotate?: number; hideOverlap?: boolean };
+				data?: string[];
+				axisLabel?: {
+					interval?: (index: number) => boolean;
+					formatter?: (value: string, index: number) => string;
+					rotate?: number;
+					hideOverlap?: boolean;
+					triggerEvent?: boolean;
+				};
 			},
 		);
 		const interval = xAxis?.axisLabel?.interval;
+		const formatter = xAxis?.axisLabel?.formatter;
 		assert.equal(typeof interval, 'function');
+		assert.equal(typeof formatter, 'function');
 		assert.equal(interval?.(0), true);
 		assert.equal(interval?.(79), true);
 		const shown = labels.map((_, index) => interval?.(index)).filter(Boolean);
 		assert.ok(shown.length < labels.length);
 		assert.equal(xAxis?.axisLabel?.hideOverlap, false);
 		assert.ok((xAxis?.axisLabel?.rotate ?? 0) > 0);
+		assert.equal(JSON.stringify(option).includes('Score'), false);
+	});
+
+	it('draws ... as an axis label on the gap index, not a graphic sticker', () => {
+		const labels = Array.from({ length: 80 }, (_, index) => `topic-${index}`);
+		const dense = aggregateRows(
+			labels.map((label, index) => ({
+				xLabels: [label],
+				seriesLabels: [],
+				y: 100 + index,
+				xNumeric: null,
+				fileName: `note-${index}`,
+			})),
+			settings({ maxCategories: 80 }),
+		);
+		const option = buildChartOption(dense, settings({ maxCategories: 80 }), theme, false);
+		const xAxis = firstOf(
+			option.xAxis as {
+				data?: string[];
+				axisLabel?: {
+					interval?: (index: number) => boolean;
+					formatter?: (value: string, index: number) => string;
+					rotate?: number;
+					hideOverlap?: boolean;
+					triggerEvent?: boolean;
+				};
+			},
+		);
+		const interval = xAxis?.axisLabel?.interval;
+		const formatter = xAxis?.axisLabel?.formatter;
+		assert.equal(typeof interval, 'function');
+		assert.equal(typeof formatter, 'function');
+		assert.equal(xAxis?.axisLabel?.triggerEvent, true);
+		assert.equal(xAxis?.axisLabel?.rotate, 45);
+		assert.equal(xAxis?.data?.includes('...'), false);
+		assert.equal(xAxis?.data?.includes('…'), false);
+		assert.deepEqual(xAxis?.data, dense.categories);
+		const plan = planCategoryAxisTicks(dense.categories, DEFAULT_AXIS_LENGTH, {
+			placement: 'bottom',
+			rotate: 45,
+		});
+		assert.ok(plan.gaps.length > 0);
+		assert.equal(plan.shown[0], 0);
+		assert.equal(plan.shown.at(-1), dense.categories.length - 1);
+		assert.equal(interval?.(0), true);
+		assert.equal(formatter?.(dense.categories[0] ?? '', 0), dense.categories[0]);
+		assert.equal(interval?.(dense.categories.length - 1), true);
+		assert.equal(
+			formatter?.(dense.categories.at(-1) ?? '', dense.categories.length - 1),
+			dense.categories.at(-1),
+		);
+		for (const index of plan.shown) {
+			assert.equal(interval?.(index), true);
+			assert.equal(formatter?.(dense.categories[index] ?? '', index), dense.categories[index]);
+		}
+		for (const gap of plan.gaps) {
+			assert.equal(interval?.(gap.index), true);
+			assert.equal(formatter?.(dense.categories[gap.index] ?? '', gap.index), AXIS_ELLIPSIS_LABEL);
+			assert.notEqual(dense.categories[gap.index], AXIS_ELLIPSIS_LABEL);
+		}
+		assert.equal(JSON.stringify(option).includes('axis-ellipsis'), false);
+		assert.equal(option.graphic, undefined);
+		const seriesNames = ((option.series as { data?: { name?: string }[] }[]) ?? []).flatMap((series) =>
+			(series.data ?? []).map((item) => item.name),
+		);
+		assert.equal(seriesNames.includes('...'), false);
 		assert.equal(JSON.stringify(option).includes('Score'), false);
 	});
 
