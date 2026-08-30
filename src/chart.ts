@@ -93,6 +93,8 @@ export const SLIDER_END = 20;
 export const SLIDER_HANDLE_ICON =
 	'path://M50,0 A50,50 0 1 1 50,100 A50,50 0 1 1 50,0 Z';
 export const SLIDER_HANDLE_SIZE = 10;
+/** Extra cartesian series/grid that paints the slider mini-graph (gradients work here). */
+export const SLIDER_WAVEFORM_ID = 'motion-slider-waveform';
 export const TREEMAP_LABEL_MIN_SHOW = 16;
 
 export function usesCartesianGrid(chartType: ChartSettings['chartType']): boolean {
@@ -314,6 +316,130 @@ export function colorAlpha(color: string, alpha: number): string {
 	return color;
 }
 
+/** Soft ridge → baseline fade for the extra-grid waveform. Slider dataBackground cannot do this. */
+export function sliderWaveformGradient(color: string, topAlpha = 0.12) {
+	return {
+		type: 'linear' as const,
+		x: 0,
+		y: 0,
+		x2: 0,
+		y2: 1,
+		colorStops: [
+			{ offset: 0, color: colorAlpha(color, topAlpha) },
+			{ offset: 1, color: colorAlpha(color, 0) },
+		],
+	};
+}
+
+function sliderWaveformSideGradient(color: string, topAlpha = 0.12) {
+	return {
+		type: 'linear' as const,
+		x: 1,
+		y: 0,
+		x2: 0,
+		y2: 0,
+		colorStops: [
+			{ offset: 0, color: colorAlpha(color, topAlpha) },
+			{ offset: 1, color: colorAlpha(color, 0) },
+		],
+	};
+}
+
+function asOptionList<T>(value: T | T[] | undefined): T[] {
+	if (value == null) return [];
+	return Array.isArray(value) ? [...value] : [value];
+}
+
+type SliderZoomResult = {
+	dataZoom: EChartsOption['dataZoom'];
+	windowSize: number;
+	extraBottom: number;
+	extraRight: number;
+	apply: <T extends EChartsOption>(option: T) => T;
+};
+
+function attachSliderWaveform<T extends EChartsOption>(
+	option: T,
+	data: AggregatedChart,
+	theme: ChartTheme,
+	horizontal: boolean,
+): T {
+	const grids = asOptionList(option.grid as object | object[] | undefined);
+	const xAxes = asOptionList(option.xAxis as object | object[] | undefined);
+	const yAxes = asOptionList(option.yAxis as object | object[] | undefined);
+	const series = asOptionList(option.series as object | object[] | undefined);
+	const gridIndex = grids.length;
+	const xAxisIndex = xAxes.length;
+	const yAxisIndex = yAxes.length;
+	const totals = categoryTotals(data);
+	const accent = theme.accent;
+	const hiddenAxis = {
+		show: false,
+		axisLine: { show: false },
+		axisTick: { show: false },
+		axisLabel: { show: false },
+		splitLine: { show: false },
+	};
+	const grid = horizontal
+		? {
+				id: SLIDER_WAVEFORM_ID,
+				top: SLIDER_START,
+				bottom: SLIDER_END,
+				right: SLIDER_EDGE,
+				width: SLIDER_HEIGHT,
+				containLabel: false,
+			}
+		: {
+				id: SLIDER_WAVEFORM_ID,
+				left: SLIDER_START,
+				right: SLIDER_END,
+				bottom: SLIDER_EDGE,
+				height: SLIDER_HEIGHT,
+				containLabel: false,
+			};
+	const categoryAxis = {
+		type: 'category' as const,
+		gridIndex,
+		data: data.categories,
+		boundaryGap: false,
+		...hiddenAxis,
+	};
+	const valueAxis = {
+		type: 'value' as const,
+		gridIndex,
+		min: 0,
+		...hiddenAxis,
+	};
+	const waveform = {
+		id: SLIDER_WAVEFORM_ID,
+		type: 'line' as const,
+		xAxisIndex,
+		yAxisIndex,
+		data: totals,
+		smooth: true,
+		showSymbol: false,
+		silent: true,
+		legendHoverLink: false,
+		animation: false,
+		z: 0,
+		tooltip: { show: false },
+		emphasis: { disabled: true },
+		lineStyle: {
+			width: 1,
+			color: colorAlpha(accent, 0.4),
+		},
+		areaStyle: {
+			color: horizontal ? sliderWaveformSideGradient(accent) : sliderWaveformGradient(accent),
+		},
+	};
+	return {
+		...option,
+		grid: [...grids, grid],
+		xAxis: [...xAxes, horizontal ? valueAxis : categoryAxis],
+		yAxis: [...yAxes, horizontal ? categoryAxis : valueAxis],
+		series: [...series, waveform],
+	};
+}
 
 function zoomStartEnd(
 	categories: string[],
@@ -421,9 +547,16 @@ function dataZoomOption(
 	theme: ChartTheme,
 	reduceMotion: boolean,
 	horizontal: boolean,
-) {
+): SliderZoomResult {
+	const passthrough = <T extends EChartsOption>(option: T) => option;
 	if (!ZOOM_TYPES.has(settings.chartType) || data.categories.length < ZOOM_AFTER) {
-		return { dataZoom: undefined, windowSize: data.categories.length, extraBottom: 0, extraRight: 0 };
+		return {
+			dataZoom: undefined,
+			windowSize: data.categories.length,
+			extraBottom: 0,
+			extraRight: 0,
+			apply: passthrough,
+		};
 	}
 	const windowSize = initialCategoryWindow(data.categories, settings.maxCategories);
 	const { start, end } = zoomStartEnd(data.categories, settings.sort, windowSize);
@@ -431,7 +564,6 @@ function dataZoomOption(
 	const accent = theme.accent;
 	const filler = colorAlpha(accent, 0.08);
 	const handle = colorAlpha(accent, 0.28);
-	const waveLine = colorAlpha(theme.text, 0.28);
 	return {
 		dataZoom: [
 			{
@@ -458,7 +590,7 @@ function dataZoomOption(
 				top: horizontal ? SLIDER_START : undefined,
 				borderColor: 'transparent',
 				borderRadius: SLIDER_HEIGHT / 2,
-				backgroundColor: colorAlpha(theme.border, 0.06),
+				backgroundColor: 'transparent',
 				fillerColor: filler,
 				handleIcon: SLIDER_HANDLE_ICON,
 				handleSize: SLIDER_HANDLE_SIZE,
@@ -474,32 +606,10 @@ function dataZoomOption(
 					color: handle,
 					opacity: 1,
 				},
-				// ECharts SliderZoomView paints dataBackground as a Polygon
-				// inside a scaleY:-1 group. Linear areaStyle.color is ignored
-				// or flattened to the first stop, so a gradient still ships as
-				// a solid mountain. Keep a 1px ridge line only. Selected-range
-				// chrome stays this same quiet line — do not permanently
-				// brighten selectedDataBackground.
-				dataBackground: {
-					lineStyle: {
-						color: waveLine,
-						width: 1,
-					},
-					areaStyle: {
-						color: 'transparent',
-						opacity: 0,
-					},
-				},
-				selectedDataBackground: {
-					lineStyle: {
-						color: waveLine,
-						width: 1,
-					},
-					areaStyle: {
-						color: 'transparent',
-						opacity: 0,
-					},
-				},
+				// Interaction chrome only. Slider dataBackground is a Polygon
+				// in a scaleY:-1 group, so areaStyle cannot fade. The mini-graph
+				// is a separate cartesian grid (see attachSliderWaveform).
+				showDataShadow: false,
 				emphasis: {
 					handleLabel: { show: false },
 					handleStyle: {
@@ -515,15 +625,15 @@ function dataZoomOption(
 				},
 				textStyle: { color: 'transparent', fontSize: 0 },
 				showDetail: false,
-				showDataShadow: true,
 				brushSelect: false,
 				realtime: true,
-				animation: !reduceMotion,
+				z: 10,
 			},
 		],
 		windowSize,
 		extraBottom: horizontal ? 0 : SLIDER_RESERVE,
 		extraRight: horizontal ? SLIDER_RESERVE : 0,
+		apply: (option) => attachSliderWaveform(option, data, theme, horizontal),
 	};
 }
 
@@ -1120,7 +1230,7 @@ export function buildChartOption(
 			}),
 			...motion(reduceMotion, name),
 		}));
-		return {
+		return zoom.apply({
 			...anim,
 			backgroundColor: theme.background,
 			color: colors,
@@ -1136,7 +1246,7 @@ export function buildChartOption(
 			},
 			yAxis: valueAxisOption(theme, settings.showGrid, logY),
 			series,
-		};
+		});
 	}
 
 	if (settings.chartType === 'dumbbell') {
@@ -1195,7 +1305,7 @@ export function buildChartOption(
 			encode: { x: 0, y: [1, 2] },
 			...motion(reduceMotion, name),
 		}));
-		return {
+		return zoom.apply({
 			...anim,
 			backgroundColor: theme.background,
 			color: colors,
@@ -1211,7 +1321,7 @@ export function buildChartOption(
 			},
 			yAxis: valueAxisOption(theme, settings.showGrid, logY),
 			series,
-		};
+		});
 	}
 
 	if (settings.chartType === 'ridgeline') {
@@ -1261,7 +1371,7 @@ export function buildChartOption(
 
 	if (settings.chartType === 'scatter') {
 		const zoom = dataZoomOption(data, settings, theme, reduceMotion, false);
-		return {
+		return zoom.apply({
 			...anim,
 			backgroundColor: theme.background,
 			color: colors,
@@ -1291,7 +1401,7 @@ export function buildChartOption(
 					})),
 				...motion(reduceMotion, name),
 			})),
-		};
+		});
 	}
 
 	if (settings.chartType === 'waterfall') {
@@ -1303,7 +1413,7 @@ export function buildChartOption(
 			return base;
 		});
 		const zoom = dataZoomOption(data, settings, theme, reduceMotion, false);
-		return {
+		return zoom.apply({
 			...anim,
 			backgroundColor: theme.background,
 			color: colors,
@@ -1338,7 +1448,7 @@ export function buildChartOption(
 					...motion(reduceMotion, 'waterfall'),
 				},
 			],
-		};
+		});
 	}
 
 	if (settings.chartType === 'icicle') {
@@ -1489,7 +1599,7 @@ export function buildChartOption(
 				? categoryAxis
 				: valueAxis;
 
-	return {
+	return zoom.apply({
 		...anim,
 		backgroundColor: theme.background,
 		color: colors,
@@ -1504,7 +1614,7 @@ export function buildChartOption(
 		xAxis: horizontal ? valueAxis : categoryAxis,
 		yAxis: yAxes,
 		series,
-	};
+	});
 }
 
 interface HierarchyNode {
@@ -1935,7 +2045,7 @@ function bulletOption(
 	const targets = data.categories.map((_, index) =>
 		data.hasY2 ? (data.y2Category[index] ?? fallback) : fallback,
 	);
-	return {
+	return zoom.apply({
 		...anim,
 		backgroundColor: theme.background,
 		color: colors,
@@ -1971,7 +2081,7 @@ function bulletOption(
 				...motion(reduceMotion, 'bullet-mark'),
 			},
 		],
-	};
+	});
 }
 
 function slopeOption(
@@ -1985,7 +2095,7 @@ function slopeOption(
 	logY: boolean,
 ): EChartsOption {
 	const zoom = dataZoomOption(data, settings, theme, reduceMotion, false);
-	return {
+	return zoom.apply({
 		...anim,
 		backgroundColor: theme.background,
 		color: colors,
@@ -2012,7 +2122,7 @@ function slopeOption(
 			label: labelStyle(theme, settings.showLabels),
 			...motion(reduceMotion, category),
 		})),
-	};
+	});
 }
 
 function histogramOption(

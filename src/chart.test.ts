@@ -13,9 +13,14 @@ import {
 	hasDateCategories,
 	initialCategoryWindow,
 	icicleLabelVisible,
+	SLIDER_EDGE,
+	SLIDER_END,
 	SLIDER_HANDLE_ICON,
 	SLIDER_HANDLE_SIZE,
 	SLIDER_HEIGHT,
+	SLIDER_START,
+	SLIDER_WAVEFORM_ID,
+	sliderWaveformGradient,
 	logSafeValue,
 	marimekkoWidths,
 	shouldApplyLogY,
@@ -63,6 +68,11 @@ const rows: RawRow[] = [
 ];
 
 const data = aggregateRows(rows, settings());
+
+function firstOf<T>(value: T | T[] | undefined): T | undefined {
+	if (value == null) return undefined;
+	return Array.isArray(value) ? value[0] : value;
+}
 
 describe('buildChartOption', () => {
 	it('builds a bar series that can grow on first render', () => {
@@ -166,16 +176,18 @@ describe('buildChartOption', () => {
 			settings(),
 		);
 		const option = buildChartOption(dense, settings(), theme, false);
-		const xAxis = option.xAxis as {
-			data?: string[];
-			axisLabel?: { interval?: number | string; hideOverlap?: boolean; rotate?: number };
-		};
-		const grid = option.grid as { bottom?: number };
-		assert.equal(xAxis.data?.length, 12);
-		assert.equal(xAxis.axisLabel?.interval, 0);
-		assert.equal(xAxis.axisLabel?.hideOverlap, false);
-		assert.ok((xAxis.axisLabel?.rotate ?? 0) > 0);
-		assert.ok((grid.bottom ?? 0) >= 100);
+		const xAxis = firstOf(
+			option.xAxis as {
+				data?: string[];
+				axisLabel?: { interval?: number | string; hideOverlap?: boolean; rotate?: number };
+			},
+		);
+		const grid = firstOf(option.grid as { bottom?: number });
+		assert.equal(xAxis?.data?.length, 12);
+		assert.equal(xAxis?.axisLabel?.interval, 0);
+		assert.equal(xAxis?.axisLabel?.hideOverlap, false);
+		assert.ok((xAxis?.axisLabel?.rotate ?? 0) > 0);
+		assert.ok((grid?.bottom ?? 0) >= 100);
 	});
 
 	it('shows every category label on horizontal bar and heatmap axes', () => {
@@ -547,17 +559,13 @@ describe('buildChartOption', () => {
 			handleIcon?: string;
 			handleSize?: string | number;
 			fillerColor?: string;
+			backgroundColor?: string;
 			handleStyle?: { color?: string };
 			emphasis?: { handleStyle?: { color?: string }; moveHandleStyle?: { color?: string } };
 			yAxisIndex?: number;
-			dataBackground?: {
-				lineStyle?: { width?: number; color?: string };
-				areaStyle?: { color?: unknown; opacity?: number };
-			};
-			selectedDataBackground?: {
-				lineStyle?: { width?: number; color?: string };
-				areaStyle?: { color?: unknown; opacity?: number };
-			};
+			xAxisIndex?: number;
+			showDataShadow?: boolean;
+			dataBackground?: unknown;
 			showDetail?: boolean;
 			brushSelect?: boolean;
 		}[];
@@ -577,14 +585,10 @@ describe('buildChartOption', () => {
 		assert.ok(SLIDER_HEIGHT < 18);
 		assert.equal(slider?.showDetail, false);
 		assert.equal(slider?.brushSelect, false);
-		assert.equal(slider?.dataBackground?.lineStyle?.width, 1);
-		assert.equal(slider?.selectedDataBackground?.lineStyle?.width, 1);
-		assert.equal(slider?.dataBackground?.lineStyle?.color, colorAlpha(theme.text, 0.28));
-		assert.equal(slider?.selectedDataBackground?.lineStyle?.color, slider?.dataBackground?.lineStyle?.color);
-		assert.equal(slider?.dataBackground?.areaStyle?.color, 'transparent');
-		assert.equal(slider?.dataBackground?.areaStyle?.opacity, 0);
-		assert.equal(slider?.selectedDataBackground?.areaStyle?.color, 'transparent');
-		assert.equal(slider?.selectedDataBackground?.areaStyle?.opacity, 0);
+		assert.equal(slider?.showDataShadow, false);
+		assert.equal(slider?.dataBackground, undefined);
+		assert.equal(slider?.xAxisIndex, 0);
+		assert.equal(slider?.backgroundColor, 'transparent');
 		assert.equal(slider?.fillerColor, colorAlpha(theme.accent, 0.08));
 		assert.equal(slider?.handleStyle?.color, colorAlpha(theme.accent, 0.28));
 		assert.equal(slider?.emphasis?.handleStyle?.color, theme.accent);
@@ -592,6 +596,71 @@ describe('buildChartOption', () => {
 		assert.equal((slider?.handleStyle?.color ?? '').includes('0.9'), false);
 		assert.equal((slider?.handleStyle?.color ?? '').includes('0.78'), false);
 		assert.notEqual(slider?.handleStyle?.color, theme.accent);
+
+		const grids = moving.grid as {
+			id?: string;
+			bottom?: number;
+			height?: number;
+			left?: number;
+			right?: number;
+			containLabel?: boolean;
+		}[];
+		assert.ok(Array.isArray(grids));
+		assert.ok((grids[0]?.bottom ?? 0) >= 100 + 36);
+		assert.equal(grids[0]?.containLabel, true);
+		const waveGrid = grids.find((item) => item.id === SLIDER_WAVEFORM_ID);
+		assert.ok(waveGrid);
+		assert.equal(waveGrid?.height, SLIDER_HEIGHT);
+		assert.equal(waveGrid?.bottom, SLIDER_EDGE);
+		assert.equal(waveGrid?.left, SLIDER_START);
+		assert.equal(waveGrid?.right, SLIDER_END);
+		assert.equal(waveGrid?.containLabel, false);
+
+		const wave = (moving.series as {
+			id?: string;
+			type?: string;
+			name?: string;
+			smooth?: boolean;
+			silent?: boolean;
+			showSymbol?: boolean;
+			xAxisIndex?: number;
+			yAxisIndex?: number;
+			data?: number[];
+			lineStyle?: { width?: number };
+			areaStyle?: { color?: { type?: string; y2?: number; colorStops?: { offset: number; color: string }[] } };
+			tooltip?: { show?: boolean };
+		}[]).find((item) => item.id === SLIDER_WAVEFORM_ID);
+		assert.ok(wave);
+		assert.equal(wave?.type, 'line');
+		assert.equal(wave?.smooth, true);
+		assert.equal(wave?.silent, true);
+		assert.equal(wave?.showSymbol, false);
+		assert.equal(wave?.tooltip?.show, false);
+		assert.equal(wave?.name, undefined);
+		assert.equal(wave?.xAxisIndex, 1);
+		assert.equal(wave?.yAxisIndex, 1);
+		assert.equal(wave?.lineStyle?.width, 1);
+		assert.equal(wave?.areaStyle?.color?.type, 'linear');
+		assert.equal(wave?.areaStyle?.color?.y2, 1);
+		assert.deepEqual(wave?.areaStyle?.color, sliderWaveformGradient(theme.accent, 0.12));
+		assert.deepEqual(wave?.data, dense.categories.map((_, index) => dense.values[0]?.[index] ?? 0));
+		const fade = wave?.areaStyle?.color?.colorStops ?? [];
+		assert.equal(fade[0]?.offset, 0);
+		assert.equal(fade[0]?.color, colorAlpha(theme.accent, 0.12));
+		assert.equal(fade[fade.length - 1]?.offset, 1);
+		assert.equal(fade[fade.length - 1]?.color, colorAlpha(theme.accent, 0));
+		assert.equal(JSON.stringify(moving).includes('Score'), false);
+		assert.equal(JSON.stringify(moving).includes('Likes'), false);
+		assert.equal(JSON.stringify(moving).includes('Channel'), false);
+		assert.equal(JSON.stringify(moving).includes('Shorts'), false);
+
+		const sparse = buildChartOption(data, settings({ maxCategories: 40 }), theme, false);
+		assert.equal(sparse.dataZoom, undefined);
+		assert.equal(Array.isArray(sparse.grid), false);
+		assert.equal(
+			(sparse.series as { id?: string }[]).some((item) => item.id === SLIDER_WAVEFORM_ID),
+			false,
+		);
 
 		const sideways = buildChartOption(
 			dense,
@@ -606,9 +675,15 @@ describe('buildChartOption', () => {
 		assert.equal(ySlider?.handleIcon, SLIDER_HANDLE_ICON);
 		assert.equal(ySlider?.yAxisIndex, 0);
 		assert.equal(ySlider?.width, SLIDER_HEIGHT);
-		const grid = moving.grid as { bottom?: number; containLabel?: boolean };
-		assert.ok((grid.bottom ?? 0) >= 100 + 36);
-		assert.equal(grid.containLabel, true);
+		const sideGrids = sideways.grid as { id?: string; width?: number; right?: number }[];
+		const sideWave = sideGrids.find((item) => item.id === SLIDER_WAVEFORM_ID);
+		assert.equal(sideWave?.width, SLIDER_HEIGHT);
+		assert.equal(sideWave?.right, SLIDER_EDGE);
+		const sideSeries = (sideways.series as { id?: string; xAxisIndex?: number; yAxisIndex?: number }[]).find(
+			(item) => item.id === SLIDER_WAVEFORM_ID,
+		);
+		assert.equal(sideSeries?.xAxisIndex, 1);
+		assert.equal(sideSeries?.yAxisIndex, 1);
 		assert.equal(still.animation, false);
 		assert.equal(categoryWindowHint(16, 20), '16 of 20 categories');
 		assert.equal(categoryWindowHint(8, 8), null);
@@ -944,9 +1019,9 @@ describe('buildChartOption', () => {
 			assert.ok((zoom.start ?? 0) > 0);
 			assert.equal(zoom.end, 100);
 		}
-		const xAxis = option.xAxis as { data?: string[] };
-		assert.equal(xAxis.data?.length, stacked.categories.length);
-		assert.equal(xAxis.data?.includes('(empty)'), false);
+		const xAxis = firstOf(option.xAxis as { data?: string[] });
+		assert.equal(xAxis?.data?.length, stacked.categories.length);
+		assert.equal(xAxis?.data?.includes('(empty)'), false);
 		assert.equal(categoryWindowHint(12, stacked.categories.length), '12 of 33 categories');
 	});
 
@@ -981,8 +1056,8 @@ describe('buildChartOption', () => {
 		assert.ok(Array.isArray(zooms));
 		assert.ok(zooms.some((item) => item.type === 'inside'));
 		assert.ok(zooms.some((item) => item.type === 'slider'));
-		const grid = option.grid as { bottom?: number };
-		assert.ok((grid.bottom ?? 0) >= 100);
+		const grid = firstOf(option.grid as { bottom?: number });
+		assert.ok((grid?.bottom ?? 0) >= 100);
 	});
 
 	it('keeps the 16-category zoom window on dense tag charts', () => {
