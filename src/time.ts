@@ -196,6 +196,7 @@ function spanCount(start: ParsedTime, end: ParsedTime): number {
 export function fillTimeCategories(categories: string[]): string[] {
 	const unique: string[] = [];
 	for (const category of categories) {
+		if (category.trim() === '' || category.trim() === '(empty)') continue;
 		if (!unique.includes(category)) unique.push(category);
 	}
 	const parsed = unique
@@ -232,7 +233,9 @@ export function fillTimeCategories(categories: string[]): string[] {
 		if (!cursor) break;
 	}
 
-	const leftovers = unique.filter((category) => !filled.includes(category));
+	const leftovers = unique.filter(
+		(category) => !filled.includes(category) && category.trim() !== '' && category.trim() !== '(empty)',
+	);
 	return leftovers.length > 0 ? [...filled, ...leftovers] : filled;
 }
 

@@ -75,7 +75,7 @@ Junk list labels (`viral`, `viral-video`, and similar) stay excluded by default;
 | Series by | Optional split |
 | Filter empty Y values | On by default |
 | Sort | **Time (old → new / new → old)** when X looks like dates or ISO weeks (`2026-W32`, `2026-08`, `2026-08-30`). **Value** (high/low) for tag bars. **Label** A–Z / Z–A. Time-like X defaults to Time old → new, not value |
-| Max categories | Caps busy **tag** charts by the current sort. On a time axis, keeps the most recent N populated periods, fills missing weeks/months/days with 0 so the calendar does not collapse, and shows the full range (the old “16 of N” window was a zoom clip, not this cap) |
+| Max categories | Caps busy **tag** charts by the current sort. On a time axis it is only a zoom-window hint: every populated period stays on the axis, missing weeks/months/days fill as 0 on the real label, and a bottom dataZoom slider (mini-graph + pill handles) windows the plot |
 | Exclude tags | Applied when the X-axis or series is a list |
 | Log Y | Display toggle. Logarithmic scale on cartesian value axes; zeros/negatives are skipped so the chart does not crash |
 | Legend / data labels / grid | Display toggles |

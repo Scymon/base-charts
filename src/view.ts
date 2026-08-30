@@ -29,6 +29,7 @@ import {
 	CalendarComponent,
 	DataZoomComponent,
 	DataZoomInsideComponent,
+	DataZoomSliderComponent,
 	GridComponent,
 	LegendComponent,
 	ParallelComponent,
@@ -101,6 +102,7 @@ echarts.use([
 	CalendarComponent,
 	DataZoomComponent,
 	DataZoomInsideComponent,
+	DataZoomSliderComponent,
 	BrushComponent,
 	LabelLayout,
 	UniversalTransition,
@@ -243,7 +245,7 @@ export class MotionChartView extends BasesView {
 			this.showEmpty('Could not draw this chart. Check the axis settings, or try another chart type.');
 			return;
 		}
-		this.updateHint(aggregated);
+		this.updateHint(aggregated, settings);
 	}
 
 	/** Skip 0×0 resizes while the canvas is display:none so a later show() is not stuck blank. */
@@ -255,9 +257,9 @@ export class MotionChartView extends BasesView {
 		}
 	}
 
-	private updateHint(data: AggregatedChart): void {
+	private updateHint(data: AggregatedChart, settings: ChartSettings): void {
 		const total = data.categories.length;
-		const visible = initialCategoryWindow(data.categories);
+		const visible = initialCategoryWindow(data.categories, settings.maxCategories);
 		const text = categoryWindowHint(visible, total);
 		if (!text) {
 			this.hintEl.hide();

@@ -207,22 +207,39 @@ describe('aggregateRows', () => {
 		assert.deepEqual(result.notes[east]?.[1], []);
 	});
 
-	it('caps a time axis to the most recent populated periods, then fills that window', () => {
+	it('does not drop a time axis with maxCategories; empty weeks are 0 on the real label', () => {
 		const weeks: RawRow[] = [
 			{ xLabels: ['2026-W10'], seriesLabels: [], y: 10, xNumeric: null, fileName: 'a' },
 			{ xLabels: ['2026-W12'], seriesLabels: [], y: 999, xNumeric: null, fileName: 'b' },
 			{ xLabels: ['2026-W20'], seriesLabels: [], y: 5, xNumeric: null, fileName: 'c' },
 			{ xLabels: ['2026-W21'], seriesLabels: [], y: 7, xNumeric: null, fileName: 'd' },
+			{ xLabels: [], seriesLabels: [], y: 3, xNumeric: null, fileName: 'orphan' },
+			{ xLabels: ['(empty)'], seriesLabels: [], y: 4, xNumeric: null, fileName: 'placeholder' },
 		];
 		const result = aggregateRows(
 			weeks,
 			settings({ chartType: 'line', aggregation: 'sum', sort: 'time-asc', maxCategories: 2 }),
 		);
+		assert.ok(result.categories.includes('2026-W10'));
+		assert.ok(result.categories.includes('2026-W12'));
 		assert.ok(result.categories.includes('2026-W20'));
 		assert.ok(result.categories.includes('2026-W21'));
-		assert.equal(result.categories.includes('2026-W10'), false);
-		assert.equal(result.categories.includes('2026-W12'), false);
-		assert.deepEqual(result.categories, ['2026-W20', '2026-W21']);
+		assert.ok(result.categories.includes('2026-W11'));
+		assert.equal(result.categories.includes('(empty)'), false);
+		assert.equal(result.values[0]?.[result.categories.indexOf('2026-W11')], 0);
+		assert.ok(result.categories.length >= 12);
+	});
+
+	it('still caps tag charts with maxCategories', () => {
+		const tagged: RawRow[] = Array.from({ length: 8 }, (_, index) => ({
+			xLabels: [`topic-${index}`],
+			seriesLabels: [],
+			y: 100 - index,
+			xNumeric: null,
+			fileName: `n-${index}`,
+		}));
+		const result = aggregateRows(tagged, settings({ sort: 'value-desc', maxCategories: 3 }));
+		assert.deepEqual(result.categories, ['topic-0', 'topic-1', 'topic-2']);
 	});
 
 	it('does not invent empty weeks on sankey', () => {
