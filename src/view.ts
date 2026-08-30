@@ -60,9 +60,11 @@ import {
 } from './chart.ts';
 import {
 	dataZoomRangeForIndices,
+	ellipsisAxisOffset,
 	planCategoryAxisTicks,
 	resolveEllipsisRange,
 	visibleIndexRange,
+	type AxisLabelGap,
 } from './axisLabels.ts';
 import { inferUnspecifiedSort } from './time.ts';
 import { pickOpenNote, resolveClickNotes, shouldOpenNotesOnClick } from './click.ts';
@@ -452,9 +454,19 @@ export class MotionChartView extends BasesView {
 				if (axis.placement === 'bottom') xInterval = interval;
 				else yInterval = interval;
 				for (const gap of plan.gaps) {
-					const pos = ellipsisPixel(chart, gap.index, axis.placement);
+					const pos = ellipsisPixel(chart, gap, axis.placement, zoom.startIndex, zoom.endIndex);
 					if (!pos) continue;
-					graphics.push(this.ellipsisGraphic(gap, pos, theme, axis.labels, axis.property, axis.labels.length));
+					graphics.push(
+						this.ellipsisGraphic(
+							gap,
+							pos,
+							theme,
+							axis.labels,
+							axis.property,
+							axis.labels.length,
+							axis.placement === 'bottom' ? 45 : 0,
+						),
+					);
 				}
 			}
 
@@ -490,6 +502,7 @@ export class MotionChartView extends BasesView {
 		labels: string[],
 		property: string | null,
 		axisLength: number,
+		rotate = 0,
 	): object {
 		return {
 			type: 'group',
@@ -498,24 +511,27 @@ export class MotionChartView extends BasesView {
 			top: pos.y,
 			silent: false,
 			cursor: 'pointer',
+			bounding: 'raw',
+			z: 8,
 			children: [
 				{
 					type: 'rect',
-					shape: { x: -16, y: -10, width: 32, height: 20 },
+					shape: { x: -12, y: -9, width: 24, height: 18 },
 					style: { fill: 'rgba(0,0,0,0)' },
 				},
 				{
 					type: 'text',
 					silent: true,
+					rotation: rotate ? (rotate * Math.PI) / 180 : 0,
 					style: {
-						text: '...',
+						text: '…',
 						x: 0,
 						y: 0,
 						fill: theme.muted,
-						font: '12px sans-serif',
+						font: '10px sans-serif',
 						textAlign: 'center',
 						textVerticalAlign: 'middle',
-						opacity: 0.65,
+						opacity: 0.4,
 					},
 				},
 			],
@@ -737,23 +753,35 @@ function mainGridRect(
 
 function ellipsisPixel(
 	chart: echarts.ECharts,
-	index: number,
+	gap: AxisLabelGap,
 	placement: 'bottom' | 'left',
+	startIndex: number,
+	endIndex: number,
 ): { x: number; y: number } | null {
 	const rect = mainGridRect(chart);
-	if (!rect) return null;
+	const neighborLo = gap.start - 1;
+	const neighborHi = gap.end + 1;
 	try {
 		if (placement === 'left') {
-			const y = pixelNumber(chart.convertToPixel({ yAxisIndex: 0 }, index) as number | number[], 1);
-			if (!Number.isFinite(y)) return null;
-			return { x: rect.x - 14, y };
+			const a = pixelNumber(chart.convertToPixel({ yAxisIndex: 0 }, neighborLo) as number | number[], 1);
+			const b = pixelNumber(chart.convertToPixel({ yAxisIndex: 0 }, neighborHi) as number | number[], 1);
+			if (Number.isFinite(a) && Number.isFinite(b)) {
+				return { x: (rect?.x ?? 0) - 14, y: (a + b) / 2 };
+			}
+		} else {
+			const a = pixelNumber(chart.convertToPixel({ xAxisIndex: 0 }, neighborLo) as number | number[], 0);
+			const b = pixelNumber(chart.convertToPixel({ xAxisIndex: 0 }, neighborHi) as number | number[], 0);
+			if (Number.isFinite(a) && Number.isFinite(b)) {
+				return { x: (a + b) / 2, y: (rect?.y ?? 0) + (rect?.height ?? 0) + 22 };
+			}
 		}
-		const x = pixelNumber(chart.convertToPixel({ xAxisIndex: 0 }, index) as number | number[], 0);
-		if (!Number.isFinite(x)) return null;
-		return { x, y: rect.y + rect.height + 16 };
 	} catch {
-		return null;
+		/* fall through to grid interpolation so the first gap is never dropped */
 	}
+	if (!rect) return null;
+	const offset = ellipsisAxisOffset(gap, startIndex, endIndex, placement === 'left' ? rect.height : rect.width);
+	if (placement === 'left') return { x: rect.x - 14, y: rect.y + offset };
+	return { x: rect.x + offset, y: rect.y + rect.height + 22 };
 }
 
 function findProperty(ids: BasesPropertyId[], names: string[]): BasesPropertyId | null {
