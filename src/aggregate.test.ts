@@ -279,7 +279,9 @@ describe('aggregateRows', () => {
 			{ xLabels: ['2025-W22'], seriesLabels: ['east'], y: 8, xNumeric: null, fileName: 'old' },
 			{ xLabels: ['2026-W22'], seriesLabels: ['east'], y: 10, xNumeric: null, fileName: 'a' },
 			{ xLabels: ['2026-W35'], seriesLabels: ['east'], y: 20, xNumeric: null, fileName: 'b' },
-			{ xLabels: ['2026-W52'], seriesLabels: ['east'], y: 1, xNumeric: null, fileName: 'stray' },
+			// Live 2026-W52 hover: real notes, wrong week-year (gggg + ISO WW).
+			{ xLabels: ['2026-W52'], seriesLabels: ['east'], y: 51, xNumeric: null, fileName: 'Creepy Chicken' },
+			{ xLabels: ['2026-W52'], seriesLabels: ['east'], y: 45, xNumeric: null, fileName: 'Woke Fast Food Fail' },
 		];
 		const result = aggregateRows(
 			weeks,
@@ -293,6 +295,16 @@ describe('aggregateRows', () => {
 		assert.equal(result.categories.includes('(empty)'), false);
 		assert.ok(result.categories.includes('2026-W28'));
 		assert.ok(result.categories.length < 83);
+		// Internal ISO 2025-W52 is a real gap between 2025-W22 and 2026-W35.
+		// Do not park the mislabeled notes there — labels are not rewritten.
+		const isoW52 = result.categories.indexOf('2025-W52');
+		assert.ok(isoW52 >= 0);
+		assert.equal(result.values[0]?.[isoW52], 0);
+		assert.deepEqual(result.notes[0]?.[isoW52], []);
+		for (const bucket of result.notes[0] ?? []) {
+			assert.equal((bucket ?? []).some((note) => note.name === 'Creepy Chicken'), false);
+			assert.equal((bucket ?? []).some((note) => note.name === 'Woke Fast Food Fail'), false);
+		}
 	});
 
 	it('does not invent empty weeks on sankey', () => {

@@ -163,6 +163,29 @@ describe('fillTimeCategories', () => {
 		assert.ok(filled.length < 83);
 		assert.ok(filled.includes('2026-W01'));
 	});
+
+	it('treats 2025-12-28 as ISO 2025-W52, not 2026-W52', () => {
+		// Creepy Chicken Release 2025-12-28 14:46 — Sunday, last day of ISO 2025-W52.
+		// A Bases formula of gggg-[W]WW (locale week-year + ISO week) labeled it
+		// 2026-W52 under a US Sunday-start locale. Vault formulas now use GGGG.
+		const release = Date.UTC(2025, 11, 28);
+		assert.deepEqual(isoYearWeekUtc(release), { year: 2025, week: 52 });
+		assert.equal(parseChartTime('2025-12-28')?.kind, 'day');
+		assert.equal(parseChartTime('2025-W52')?.label, '2025-W52');
+		assert.equal(parseChartTime('2026-W52')?.label, '2026-W52');
+		assert.ok((parseChartTime('2026-W52')?.t ?? 0) > NOW_W35);
+	});
+
+	it('drops a populated 2026-W52 instead of rewriting it to 2025-W52', () => {
+		// Live hover on 2026-W52 listed real notes (Creepy Chicken, Woke Fast
+		// Food Fail). The plugin does not remap that label to ISO 2025-W52.
+		const filled = fillTimeCategories(['2025-W22', '2026-W35', '2026-W52'], NOW_W35);
+		assert.equal(filled.includes('2026-W52'), false);
+		assert.ok(filled.includes('2025-W52'));
+		assert.equal(filled[filled.length - 1], '2026-W35');
+		assert.deepEqual(fillTimeCategories(['2026-W52'], NOW_W35), []);
+		assert.deepEqual(fillTimeCategories(['2026-W36', '2026-W52'], NOW_W35), []);
+	});
 });
 
 describe('inferUnspecifiedSort', () => {

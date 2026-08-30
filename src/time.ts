@@ -226,8 +226,10 @@ function spanCount(start: ParsedTime, end: ParsedTime): number {
 /**
  * Insert missing calendar steps between the earliest and latest *usable*
  * time label. Usable = a real populated period that is not after `now`.
- * Internal gaps stay (0 on the axis). Trailing invented zeros and future
- * stretch past today are dropped. Existing labels are kept as-is; invented
+ * Internal gaps stay (0 on the axis). Periods after the current week /
+ * month / day are dropped even when they have notes — the plugin does not
+ * rewrite a wrong label (e.g. locale `gggg` week-year + ISO `WW` producing
+ * `2026-W52` for 2025-12-28). Existing labels are kept as-is; invented
  * gaps use the canonical format.
  */
 export function fillTimeCategories(categories: string[], nowMs = Date.now()): string[] {
@@ -239,21 +241,26 @@ export function fillTimeCategories(categories: string[], nowMs = Date.now()): st
 	const parsed = unique
 		.map((category) => ({ category, time: parseChartTime(category) }))
 		.filter((item): item is { category: string; time: ParsedTime } => item.time != null);
-	if (parsed.length < 2) return unique;
 
 	const kind = majorityKind(parsed.map((item) => item.time));
-	if (!kind) return unique;
+	const nowPeriod = kind ? currentPeriod(kind, nowMs) : null;
 
-	const nowPeriod = currentPeriod(kind, nowMs);
-	const ofKind = parsed.filter((item) => item.time.kind === kind);
-	ofKind.sort((a, b) => a.time.t - b.time.t);
-	const usable = nowPeriod ? ofKind.filter((item) => item.time.t <= nowPeriod.t) : ofKind;
+	const isFuture = (category: string): boolean => {
+		if (!kind || !nowPeriod) return false;
+		const time = parseChartTime(category);
+		return !!(time && time.kind === kind && time.t > nowPeriod.t);
+	};
+	const present = unique.filter((category) => !isFuture(category));
+
+	const usable = parsed
+		.filter((item) => item.time.kind === kind && (!nowPeriod || item.time.t <= nowPeriod.t))
+		.sort((a, b) => a.time.t - b.time.t);
 	const first = usable[0];
 	const last = usable[usable.length - 1];
-	if (!first || !last) return unique;
-	if (spanCount(first.time, last.time) > MAX_TIME_FILL) return unique;
+	if (!kind || !first || !last || usable.length < 2) return present;
+	if (spanCount(first.time, last.time) > MAX_TIME_FILL) return present;
 
-	const seen = new Set(unique);
+	const seen = new Set(present);
 	const filled: string[] = [];
 	let cursor: ParsedTime | null = first.time;
 	const originals = new Map<number, string>();
@@ -272,12 +279,10 @@ export function fillTimeCategories(categories: string[], nowMs = Date.now()): st
 		if (!cursor) break;
 	}
 
-	const leftovers = unique.filter((category) => {
+	const leftovers = present.filter((category) => {
 		if (filled.includes(category)) return false;
 		if (category.trim() === '' || category.trim() === '(empty)') return false;
 		const time = parseChartTime(category);
-		// Same-kind leftovers are future (or otherwise past the last real
-		// bucket). Do not append them — that is what pads a year-end tail.
 		if (time && time.kind === kind) return false;
 		return true;
 	});
