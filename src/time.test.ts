@@ -71,6 +71,12 @@ describe('fillTimeCategories', () => {
 		]);
 	});
 
+	it('never emits a literal (empty) category', () => {
+		const filled = fillTimeCategories(['2026-W10', '(empty)', '2026-W08', '']);
+		assert.equal(filled.includes('(empty)'), false);
+		assert.deepEqual(filled, ['2026-W08', '2026-W09', '2026-W10']);
+	});
+
 	it('crosses the ISO year boundary using 52/53-week years', () => {
 		assert.equal(isoWeeksInYear(2025), 52);
 		assert.equal(isoWeeksInYear(2026), 53);

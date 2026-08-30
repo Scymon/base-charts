@@ -78,6 +78,11 @@ const ZOOM_TYPES = new Set<ChartSettings['chartType']>([
 
 export const ZOOM_AFTER = 12;
 export const ZOOM_WINDOW = 16;
+export const SLIDER_HEIGHT = 22;
+export const SLIDER_RESERVE = 36;
+/** Capsule / pill handle — easy to grab, matches the selected-range ends. */
+export const SLIDER_HANDLE_ICON =
+	'path://M4,0 A4,4 0 0 1 8,4 L8,20 A4,4 0 0 1 4,24 L4,24 A4,4 0 0 1 0,20 L0,4 A4,4 0 0 1 4,0 Z';
 export const TREEMAP_LABEL_MIN_SHOW = 16;
 
 export function usesCartesianGrid(chartType: ChartSettings['chartType']): boolean {
@@ -231,13 +236,20 @@ export function categoryAxisPad(categories: string[], placement: 'bottom' | 'lef
 function cartesianGrid(
 	horizontal: boolean,
 	categories: string[],
-	extra: { right?: number; bottom?: number; left?: number; top?: number } = {},
+	extra: {
+		right?: number;
+		bottom?: number;
+		left?: number;
+		top?: number;
+		addBottom?: number;
+		addRight?: number;
+	} = {},
 ) {
 	const pad = categoryAxisPad(categories, horizontal ? 'left' : 'bottom');
 	return {
 		top: extra.top ?? pad.top,
-		right: extra.right ?? pad.right,
-		bottom: extra.bottom ?? pad.bottom,
+		right: (extra.right ?? pad.right) + (extra.addRight ?? 0),
+		bottom: (extra.bottom ?? pad.bottom) + (extra.addBottom ?? 0),
 		left: extra.left ?? pad.left,
 		containLabel: true,
 	};
@@ -249,11 +261,60 @@ export function categoryWindowHint(visible: number, total: number): string | nul
 	return `${visible} of ${total} categories`;
 }
 
-/** Initial visible category count. Time axes show the full range; tag charts window to 16. */
-export function initialCategoryWindow(categories: string[]): number {
+/**
+ * Initial visible category count for the dataZoom window.
+ * Tag charts window to 16. Time axes keep every period in the mini-graph and
+ * open on a recent slice (maxCategories is a window hint, not a drop).
+ */
+export function initialCategoryWindow(categories: string[], maxCategories = ZOOM_WINDOW): number {
 	if (categories.length < ZOOM_AFTER) return categories.length;
-	if (hasTimeCategories(categories)) return categories.length;
+	if (hasTimeCategories(categories)) {
+		const window = Math.min(ZOOM_WINDOW, Math.max(ZOOM_AFTER, maxCategories));
+		return Math.min(categories.length, window);
+	}
 	return Math.min(categories.length, ZOOM_WINDOW);
+}
+
+/** Theme accent as rgba() so slider chrome can dim / highlight without a hardcoded purple. */
+export function colorAlpha(color: string, alpha: number): string {
+	const hex = color.trim();
+	const short = hex.match(/^#([0-9a-f])([0-9a-f])([0-9a-f])$/i);
+	const sr = short?.[1];
+	const sg = short?.[2];
+	const sb = short?.[3];
+	if (sr && sg && sb) {
+		return `rgba(${Number.parseInt(sr + sr, 16)}, ${Number.parseInt(sg + sg, 16)}, ${Number.parseInt(sb + sb, 16)}, ${alpha})`;
+	}
+	const long = hex.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})(?:[0-9a-f]{2})?$/i);
+	const lr = long?.[1];
+	const lg = long?.[2];
+	const lb = long?.[3];
+	if (lr && lg && lb) {
+		return `rgba(${Number.parseInt(lr, 16)}, ${Number.parseInt(lg, 16)}, ${Number.parseInt(lb, 16)}, ${alpha})`;
+	}
+	const rgb = hex.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*[,/]\s*[\d.]+)?\s*\)$/i);
+	const rr = rgb?.[1];
+	const rg = rgb?.[2];
+	const rb = rgb?.[3];
+	if (rr && rg && rb) {
+		return `rgba(${rr}, ${rg}, ${rb}, ${alpha})`;
+	}
+	return color;
+}
+
+function zoomStartEnd(
+	categories: string[],
+	sort: ChartSettings['sort'],
+	windowSize: number,
+): { start: number; end: number } {
+	const n = Math.max(1, categories.length);
+	const pct = Math.min(100, (windowSize / n) * 100);
+	const timeLike = hasTimeCategories(categories);
+	const recentAtEnd = timeLike && sort !== 'time-desc' && !sort.startsWith('value');
+	if (recentAtEnd) {
+		return { start: Math.max(0, 100 - pct), end: 100 };
+	}
+	return { start: 0, end: pct };
 }
 
 export function treemapLabelLayout(params: { rect?: { width?: number; height?: number }; text?: string }) {
@@ -341,13 +402,26 @@ function valueAxisOption(theme: ChartTheme, showGrid: boolean, logY: boolean, ex
 	};
 }
 
-function dataZoomOption(data: AggregatedChart, settings: ChartSettings, horizontal: boolean) {
+function dataZoomOption(
+	data: AggregatedChart,
+	settings: ChartSettings,
+	theme: ChartTheme,
+	reduceMotion: boolean,
+	horizontal: boolean,
+) {
 	if (!ZOOM_TYPES.has(settings.chartType) || data.categories.length < ZOOM_AFTER) {
-		return { dataZoom: undefined, windowSize: data.categories.length };
+		return { dataZoom: undefined, windowSize: data.categories.length, extraBottom: 0, extraRight: 0 };
 	}
-	const windowSize = initialCategoryWindow(data.categories);
-	const end = Math.min(100, (windowSize / data.categories.length) * 100);
+	const windowSize = initialCategoryWindow(data.categories, settings.maxCategories);
+	const { start, end } = zoomStartEnd(data.categories, settings.sort, windowSize);
 	const axis = horizontal ? { yAxisIndex: 0 } : { xAxisIndex: 0 };
+	const accent = theme.accent;
+	const dim = colorAlpha(accent, 0.22);
+	const dimmer = colorAlpha(accent, 0.12);
+	const hover = colorAlpha(accent, 0.85);
+	const handle = colorAlpha(accent, 0.42);
+	const line = colorAlpha(accent, 0.7);
+	const mutedLine = colorAlpha(theme.muted, 0.45);
 	return {
 		dataZoom: [
 			{
@@ -357,11 +431,69 @@ function dataZoomOption(data: AggregatedChart, settings: ChartSettings, horizont
 				zoomOnMouseWheel: true,
 				moveOnMouseMove: true,
 				preventDefaultMouseMove: true,
-				start: 0,
+				start,
 				end,
+			},
+			{
+				type: 'slider' as const,
+				...axis,
+				filterMode: 'filter' as const,
+				start,
+				end,
+				height: horizontal ? undefined : SLIDER_HEIGHT,
+				width: horizontal ? SLIDER_HEIGHT : undefined,
+				bottom: horizontal ? undefined : 8,
+				right: horizontal ? 8 : 20,
+				left: horizontal ? undefined : 48,
+				top: horizontal ? 48 : undefined,
+				borderColor: 'transparent',
+				backgroundColor: colorAlpha(theme.border, 0.22),
+				fillerColor: dim,
+				handleIcon: SLIDER_HANDLE_ICON,
+				handleSize: 18,
+				handleStyle: {
+					color: handle,
+					borderColor: 'transparent',
+					borderWidth: 0,
+					shadowBlur: 0,
+				},
+				moveHandleSize: 1,
+				moveHandleStyle: {
+					color: line,
+					opacity: 0.9,
+				},
+				dataBackground: {
+					lineStyle: { color: mutedLine, width: 1 },
+					areaStyle: { color: dimmer, opacity: 1 },
+				},
+				selectedDataBackground: {
+					lineStyle: { color: line, width: 1 },
+					areaStyle: { color: dim, opacity: 1 },
+				},
+				emphasis: {
+					handleLabel: { show: false },
+					handleStyle: {
+						color: hover,
+						borderColor: 'transparent',
+						shadowBlur: 8,
+						shadowColor: colorAlpha(accent, 0.45),
+					},
+					moveHandleStyle: {
+						color: hover,
+						opacity: 1,
+					},
+				},
+				textStyle: { color: 'transparent', fontSize: 0 },
+				showDetail: false,
+				showDataShadow: true,
+				brushSelect: false,
+				realtime: true,
+				animation: !reduceMotion,
 			},
 		],
 		windowSize,
+		extraBottom: horizontal ? 0 : SLIDER_RESERVE,
+		extraRight: horizontal ? SLIDER_RESERVE : 0,
 	};
 }
 
@@ -947,7 +1079,7 @@ export function buildChartOption(
 	}
 
 	if (settings.chartType === 'boxplot') {
-		const zoom = dataZoomOption(data, settings, false);
+		const zoom = dataZoomOption(data, settings, theme, reduceMotion, false);
 		const series: SeriesOption[] = data.seriesNames.map((name, seriesIndex) => ({
 			name,
 			type: 'boxplot',
@@ -964,7 +1096,7 @@ export function buildChartOption(
 			color: colors,
 			legend,
 			tooltip: categoryTooltip(theme, data, settings, 'item'),
-			grid: cartesianGrid(false, data.categories),
+			grid: cartesianGrid(false, data.categories, { addBottom: zoom.extraBottom }),
 			dataZoom: zoom.dataZoom,
 			xAxis: {
 				type: 'category',
@@ -978,7 +1110,7 @@ export function buildChartOption(
 	}
 
 	if (settings.chartType === 'dumbbell') {
-		const zoom = dataZoomOption(data, settings, false);
+		const zoom = dataZoomOption(data, settings, theme, reduceMotion, false);
 		const series: SeriesOption[] = data.seriesNames.map((name, seriesIndex) => ({
 			name,
 			type: 'custom',
@@ -1039,7 +1171,7 @@ export function buildChartOption(
 			color: colors,
 			legend,
 			tooltip: categoryTooltip(theme, data, settings, 'item'),
-			grid: cartesianGrid(false, data.categories),
+			grid: cartesianGrid(false, data.categories, { addBottom: zoom.extraBottom }),
 			dataZoom: zoom.dataZoom,
 			xAxis: {
 				type: 'category',
@@ -1098,14 +1230,14 @@ export function buildChartOption(
 	}
 
 	if (settings.chartType === 'scatter') {
-		const zoom = dataZoomOption(data, settings, false);
+		const zoom = dataZoomOption(data, settings, theme, reduceMotion, false);
 		return {
 			...anim,
 			backgroundColor: theme.background,
 			color: colors,
 			legend,
 			tooltip: categoryTooltip(theme, data, settings, 'item'),
-			grid: cartesianGrid(false, data.categories),
+			grid: cartesianGrid(false, data.categories, { addBottom: zoom.extraBottom }),
 			dataZoom: zoom.dataZoom,
 			xAxis: {
 				type: typeof data.points[0]?.x === 'number' ? 'value' : 'category',
@@ -1140,13 +1272,13 @@ export function buildChartOption(
 			running += value;
 			return base;
 		});
-		const zoom = dataZoomOption(data, settings, false);
+		const zoom = dataZoomOption(data, settings, theme, reduceMotion, false);
 		return {
 			...anim,
 			backgroundColor: theme.background,
 			color: colors,
 			tooltip: categoryTooltip(theme, data, settings),
-			grid: cartesianGrid(false, data.categories),
+			grid: cartesianGrid(false, data.categories, { addBottom: zoom.extraBottom }),
 			dataZoom: zoom.dataZoom,
 			xAxis: {
 				type: 'category',
@@ -1217,7 +1349,7 @@ export function buildChartOption(
 	const lollipop = settings.chartType === 'lollipop' || settings.chartType === 'slope';
 	const stackedArea = settings.chartType === 'area-stacked';
 	const stepLine = settings.chartType === 'line-step';
-	const zoom = dataZoomOption(data, settings, horizontal);
+	const zoom = dataZoomOption(data, settings, theme, reduceMotion, horizontal);
 	const extraRight = combo && data.hasY2 ? 48 : 0;
 	const percents = percent ? toPercents(data) : null;
 	const categoryAxis = {
@@ -1335,6 +1467,8 @@ export function buildChartOption(
 		tooltip: categoryTooltip(theme, data, settings),
 		grid: cartesianGrid(horizontal, data.categories, {
 			right: extraRight || undefined,
+			addBottom: zoom.extraBottom,
+			addRight: zoom.extraRight,
 		}),
 		dataZoom: zoom.dataZoom,
 		xAxis: horizontal ? valueAxis : categoryAxis,
@@ -1765,7 +1899,7 @@ function bulletOption(
 	colors: string[],
 	logY: boolean,
 ): EChartsOption {
-	const zoom = dataZoomOption(data, settings, true);
+	const zoom = dataZoomOption(data, settings, theme, reduceMotion, true);
 	const totals = categoryTotals(data);
 	const fallback = data.overall ?? 0;
 	const targets = data.categories.map((_, index) =>
@@ -1776,7 +1910,7 @@ function bulletOption(
 		backgroundColor: theme.background,
 		color: colors,
 		tooltip: categoryTooltip(theme, data, settings),
-		grid: cartesianGrid(true, data.categories),
+		grid: cartesianGrid(true, data.categories, { addRight: zoom.extraRight }),
 		dataZoom: zoom.dataZoom,
 		xAxis: valueAxisOption(theme, settings.showGrid, logY),
 		yAxis: {
@@ -1820,14 +1954,14 @@ function slopeOption(
 	legend: object,
 	logY: boolean,
 ): EChartsOption {
-	const zoom = dataZoomOption(data, settings, false);
+	const zoom = dataZoomOption(data, settings, theme, reduceMotion, false);
 	return {
 		...anim,
 		backgroundColor: theme.background,
 		color: colors,
 		legend,
 		tooltip: categoryTooltip(theme, data, settings),
-		grid: cartesianGrid(false, data.seriesNames, { bottom: 80 }),
+		grid: cartesianGrid(false, data.seriesNames, { bottom: 80, addBottom: zoom.extraBottom }),
 		dataZoom: zoom.dataZoom,
 		xAxis: {
 			type: 'category',

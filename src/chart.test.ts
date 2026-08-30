@@ -9,9 +9,12 @@ import {
 	categoryWindowHint,
 	chartCoordFamily,
 	CHART_OPTION_REPLACE_MERGE,
+	colorAlpha,
 	hasDateCategories,
 	initialCategoryWindow,
 	icicleLabelVisible,
+	SLIDER_HANDLE_ICON,
+	SLIDER_HEIGHT,
 	logSafeValue,
 	marimekkoWidths,
 	shouldApplyLogY,
@@ -455,7 +458,7 @@ describe('buildChartOption', () => {
 		assert.ok((series?.links?.length ?? 0) > 0);
 	});
 
-	it('adds inside dataZoom on dense cartesian charts without a slider', () => {
+	it('adds inside + pill slider dataZoom on dense cartesian charts', () => {
 		const labels = Array.from({ length: 20 }, (_, index) => `topic-${index}`);
 		const dense = aggregateRows(
 			labels.map((label, index) => ({
@@ -469,12 +472,32 @@ describe('buildChartOption', () => {
 		);
 		const moving = buildChartOption(dense, settings({ maxCategories: 40 }), theme, false);
 		const still = buildChartOption(dense, settings({ maxCategories: 40 }), theme, true);
-		const zooms = moving.dataZoom as { type?: string }[];
+		const zooms = moving.dataZoom as {
+			type?: string;
+			height?: number;
+			handleIcon?: string;
+			fillerColor?: string;
+			handleStyle?: { color?: string };
+			dataBackground?: { lineStyle?: { width?: number } };
+			selectedDataBackground?: { lineStyle?: { width?: number } };
+			showDetail?: boolean;
+			brushSelect?: boolean;
+		}[];
 		assert.ok(Array.isArray(zooms));
 		assert.ok(zooms.some((item) => item.type === 'inside'));
-		assert.equal(zooms.some((item) => item.type === 'slider'), false);
+		const slider = zooms.find((item) => item.type === 'slider');
+		assert.ok(slider);
+		assert.equal(slider?.handleIcon, SLIDER_HANDLE_ICON);
+		assert.ok((slider?.height ?? 0) >= 18 && (slider?.height ?? 0) <= 24);
+		assert.equal(slider?.height, SLIDER_HEIGHT);
+		assert.equal(slider?.showDetail, false);
+		assert.equal(slider?.brushSelect, false);
+		assert.equal(slider?.dataBackground?.lineStyle?.width, 1);
+		assert.equal(slider?.selectedDataBackground?.lineStyle?.width, 1);
+		assert.equal(slider?.fillerColor, colorAlpha(theme.accent, 0.22));
+		assert.equal(slider?.handleStyle?.color, colorAlpha(theme.accent, 0.42));
 		const grid = moving.grid as { bottom?: number; containLabel?: boolean };
-		assert.ok((grid.bottom ?? 0) >= 100);
+		assert.ok((grid.bottom ?? 0) >= 100 + 36);
 		assert.equal(grid.containLabel, true);
 		assert.equal(still.animation, false);
 		assert.equal(categoryWindowHint(16, 20), '16 of 20 categories');
@@ -777,7 +800,7 @@ describe('buildChartOption', () => {
 		assert.ok(bins.reduce((sum, bin) => sum + bin.count, 0) === 4);
 	});
 
-	it('shows every time category instead of clipping the first 16', () => {
+	it('keeps every time category on the axis and windows the recent slice with a slider', () => {
 		const weeks = Array.from({ length: 33 }, (_, index) => {
 			const week = index + 1;
 			return {
@@ -790,25 +813,31 @@ describe('buildChartOption', () => {
 		});
 		const stacked = aggregateRows(
 			weeks,
-			settings({ chartType: 'area-stacked', aggregation: 'sum', sort: 'time-asc', maxCategories: 40 }),
+			settings({ chartType: 'area-stacked', aggregation: 'sum', sort: 'time-asc', maxCategories: 12 }),
 		);
 		assert.ok(stacked.categories.length >= 33);
 		assert.equal(stacked.categories[0], '2026-W01');
+		assert.equal(stacked.categories.includes('(empty)'), false);
 		assert.equal(hasDateCategories(stacked.categories), true);
-		assert.equal(initialCategoryWindow(stacked.categories), stacked.categories.length);
+		assert.equal(initialCategoryWindow(stacked.categories, 12), 12);
 		const option = buildChartOption(
 			stacked,
-			settings({ chartType: 'area-stacked', sort: 'time-asc', maxCategories: 40 }),
+			settings({ chartType: 'area-stacked', sort: 'time-asc', maxCategories: 12 }),
 			theme,
 			false,
 		);
-		const zooms = option.dataZoom as { start?: number; end?: number }[] | undefined;
+		const zooms = option.dataZoom as { type?: string; start?: number; end?: number }[] | undefined;
 		assert.ok(Array.isArray(zooms));
-		assert.equal(zooms[0]?.start, 0);
-		assert.equal(zooms[0]?.end, 100);
+		assert.ok(zooms.some((item) => item.type === 'inside'));
+		assert.ok(zooms.some((item) => item.type === 'slider'));
+		for (const zoom of zooms ?? []) {
+			assert.ok((zoom.start ?? 0) > 0);
+			assert.equal(zoom.end, 100);
+		}
 		const xAxis = option.xAxis as { data?: string[] };
 		assert.equal(xAxis.data?.length, stacked.categories.length);
-		assert.equal(categoryWindowHint(stacked.categories.length, stacked.categories.length), null);
+		assert.equal(xAxis.data?.includes('(empty)'), false);
+		assert.equal(categoryWindowHint(12, stacked.categories.length), '12 of 33 categories');
 	});
 
 	it('keeps the 16-category zoom window on dense tag charts', () => {

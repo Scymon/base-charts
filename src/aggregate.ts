@@ -154,7 +154,7 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 			continue;
 		}
 
-		const xLabels = row.xLabels.length > 0 ? row.xLabels : ['(empty)'];
+		const xLabels = row.xLabels.filter((label) => label.trim() !== '' && label.trim() !== '(empty)');
 		const seriesLabels = rowSeriesLabels(row, seriesByConfigured, settings.chartType);
 		const y = row.y ?? 0;
 
@@ -198,6 +198,7 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 	const populated: string[] = [];
 	const seriesNames: string[] = [];
 	for (const bucket of buckets.values()) {
+		if (bucket.x.trim() === '' || bucket.x.trim() === '(empty)') continue;
 		pushUnique(populated, bucket.x);
 		if (hasSeriesLabel(bucket.series)) pushUnique(seriesNames, bucket.series);
 	}
@@ -238,8 +239,12 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 	let keptPopulated = populatedTotals;
 	if (timeLike || raceByDate) {
 		keptPopulated = [...populatedTotals].sort((a, b) => compareTimeLabels(a.category, b.category));
-		const keep = raceByDate ? Math.max(24, cap) : cap;
-		if (keptPopulated.length > keep) keptPopulated = keptPopulated.slice(-keep);
+		// Time axes keep every populated period; the dataZoom slider windows the plot.
+		// Bar-race still caps frames so a playhead does not grow without bound.
+		if (raceByDate) {
+			const keep = Math.max(24, cap);
+			if (keptPopulated.length > keep) keptPopulated = keptPopulated.slice(-keep);
+		}
 	} else {
 		keptPopulated = [...populatedTotals].sort((a, b) => compareCategories(a, b, sort));
 		if (keptPopulated.length > cap) keptPopulated = keptPopulated.slice(0, cap);
