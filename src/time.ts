@@ -12,10 +12,14 @@ export interface ParsedTime {
 
 /** ISO week `2026-W32` / `2026-W9` / formula-style `2026-[W]32`. */
 const ISO_WEEK = /^(\d{4})-\[?W\]?(\d{1,2})$/i;
-/** Calendar month `2026-08`. */
-const YEAR_MONTH = /^(\d{4})-(\d{2})$/;
-/** Calendar day, optionally with a time suffix. */
-const YEAR_MONTH_DAY = /^(\d{4}-\d{2}-\d{2})/;
+/** Calendar month `2026-08` / `2026-8`. */
+const YEAR_MONTH = /^(\d{4})-(\d{1,2})$/;
+/**
+ * Calendar day `2026-08-30` / `2026-8-3` / `2026-08-3`, optional time suffix.
+ * Also matches invalid triples like `2026-55-16` so we can reject them
+ * without falling through to Date.parse.
+ */
+const YEAR_MONTH_DAY = /^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s].*)?$/;
 
 const MIN_YEAR = 1990;
 const MAX_YEAR = 2100;
@@ -62,6 +66,17 @@ function inYearRange(year: number): boolean {
 	return year >= MIN_YEAR && year <= MAX_YEAR;
 }
 
+function calendarDay(year: number, month: number, day: number): ParsedTime | null {
+	if (!inYearRange(year) || month < 1 || month > 12 || day < 1 || day > 31) return null;
+	const t = Date.UTC(year, month - 1, day);
+	if (!Number.isFinite(t)) return null;
+	const check = new Date(t);
+	if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) {
+		return null;
+	}
+	return { kind: 'day', label: formatIsoDate(check, true), t };
+}
+
 export function parseChartTime(label: string): ParsedTime | null {
 	const trimmed = label.trim();
 	if (!trimmed) return null;
@@ -76,14 +91,12 @@ export function parseChartTime(label: string): ParsedTime | null {
 	}
 
 	const day = trimmed.match(YEAR_MONTH_DAY);
-	if (day?.[1]) {
-		const [year, month, date] = day[1].split('-').map(Number);
-		if (!year || !month || !date || !inYearRange(year) || month < 1 || month > 12 || date < 1 || date > 31) {
-			return null;
-		}
-		const t = Date.UTC(year, month - 1, date);
-		if (!Number.isFinite(t)) return null;
-		return { kind: 'day', label: day[1], t };
+	if (day) {
+		const year = Number(day[1]);
+		const month = Number(day[2]);
+		const date = Number(day[3]);
+		// Triple like `2026-55-16` (week-year + minutes + day) is not a date.
+		return calendarDay(year, month, date);
 	}
 
 	const month = trimmed.match(YEAR_MONTH);
@@ -100,14 +113,13 @@ export function parseChartTime(label: string): ParsedTime | null {
 function parseLooseDate(label: string): ParsedTime | null {
 	if (!/\d{4}/.test(label)) return null;
 	if (/^-?\d+(\.\d+)?$/.test(label)) return null;
+	// Never Date.parse a numeric Y-M-D / Y-M triple (invalid months become fake dates).
+	if (/^\d{4}-\d{1,2}(?:-\d{1,2})?(?:[T\s].*)?$/.test(label)) return null;
 	const parsed = Date.parse(label);
 	if (!Number.isFinite(parsed)) return null;
 	const date = new Date(parsed);
 	if (Number.isNaN(date.getTime())) return null;
-	const year = date.getUTCFullYear();
-	if (!inYearRange(year)) return null;
-	const iso = date.toISOString().slice(0, 10);
-	return { kind: 'day', label: iso, t: Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) };
+	return calendarDay(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate());
 }
 
 /** YYYY-MM-DD for calendar heatmap cells. Weeks stay out (no single day). */
@@ -129,7 +141,7 @@ export function hasTimeCategories(categories: string[]): boolean {
 export function compareTimeLabels(left: string, right: string): number {
 	const a = parseChartTime(left);
 	const b = parseChartTime(right);
-	if (a && b && a.t !== b.t) return a.t - b.t;
+	if (a && b) return a.t !== b.t ? a.t - b.t : left.localeCompare(right);
 	if (a && !b) return -1;
 	if (!a && b) return 1;
 	return left.localeCompare(right);

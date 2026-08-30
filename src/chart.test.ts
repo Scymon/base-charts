@@ -840,6 +840,39 @@ describe('buildChartOption', () => {
 		assert.equal(categoryWindowHint(12, stacked.categories.length), '12 of 33 categories');
 	});
 
+	it('puts a bottom slider on a dense calendar-day area chart', () => {
+		const days = Array.from({ length: 36 }, (_, index) => {
+			const date = new Date(Date.UTC(2026, 7, 1 + index));
+			const label = date.toISOString().slice(0, 10);
+			return {
+				xLabels: [label],
+				seriesLabels: [],
+				y: 10 + index,
+				xNumeric: null,
+				fileName: `note-${label}`,
+			};
+		});
+		const data = aggregateRows(
+			days,
+			settings({ chartType: 'area', aggregation: 'median', sort: 'time-desc', maxCategories: 36 }),
+		);
+		assert.equal(data.categories.length, 36);
+		assert.equal(data.categories[0], '2026-09-05');
+		assert.equal(data.categories[35], '2026-08-01');
+		const option = buildChartOption(
+			data,
+			settings({ chartType: 'area', sort: 'time-desc', maxCategories: 36 }),
+			theme,
+			false,
+		);
+		const zooms = option.dataZoom as { type?: string }[] | undefined;
+		assert.ok(Array.isArray(zooms));
+		assert.ok(zooms.some((item) => item.type === 'inside'));
+		assert.ok(zooms.some((item) => item.type === 'slider'));
+		const grid = option.grid as { bottom?: number };
+		assert.ok((grid.bottom ?? 0) >= 100);
+	});
+
 	it('keeps the 16-category zoom window on dense tag charts', () => {
 		const labels = Array.from({ length: 20 }, (_, index) => `topic-${index}`);
 		assert.equal(initialCategoryWindow(labels), 16);
