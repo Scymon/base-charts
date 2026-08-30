@@ -230,6 +230,37 @@ describe('aggregateRows', () => {
 		assert.ok(result.categories.length >= 12);
 	});
 
+	it('sorts unpadded calendar days by timestamp on Time new → old', () => {
+		const days: RawRow[] = [
+			{ xLabels: ['2026-8-9'], seriesLabels: [], y: 10, xNumeric: null, fileName: 'a' },
+			{ xLabels: ['2026-8-28'], seriesLabels: [], y: 20, xNumeric: null, fileName: 'b' },
+			{ xLabels: ['2026-8-3'], seriesLabels: [], y: 30, xNumeric: null, fileName: 'c' },
+			{ xLabels: ['2026-8-10'], seriesLabels: [], y: 40, xNumeric: null, fileName: 'd' },
+		];
+		const result = aggregateRows(
+			days,
+			settings({ chartType: 'area', aggregation: 'sum', sort: 'time-desc', maxCategories: 80 }),
+		);
+		const populated = result.categories.filter((_, index) => (result.values[0]?.[index] ?? 0) > 0);
+		assert.deepEqual(populated, ['2026-8-28', '2026-8-10', '2026-8-9', '2026-8-3']);
+		assert.equal(result.categories.includes('(empty)'), false);
+	});
+
+	it('does not treat gggg-mm-D triples as a time axis', () => {
+		const bogus: RawRow[] = [
+			{ xLabels: ['2026-55-16'], seriesLabels: [], y: 10, xNumeric: null, fileName: 'a' },
+			{ xLabels: ['2026-45-5'], seriesLabels: [], y: 20, xNumeric: null, fileName: 'b' },
+			{ xLabels: ['2026-45-28'], seriesLabels: [], y: 30, xNumeric: null, fileName: 'c' },
+		];
+		const result = aggregateRows(
+			bogus,
+			settings({ chartType: 'area', aggregation: 'sum', sort: 'time-desc', maxCategories: 80 }),
+		);
+		assert.equal(result.categories.includes('2026-02-01'), false);
+		assert.ok(result.categories.length <= 3);
+		assert.deepEqual([...result.categories].sort(), ['2026-45-28', '2026-45-5', '2026-55-16']);
+	});
+
 	it('still caps tag charts with maxCategories', () => {
 		const tagged: RawRow[] = Array.from({ length: 8 }, (_, index) => ({
 			xLabels: [`topic-${index}`],

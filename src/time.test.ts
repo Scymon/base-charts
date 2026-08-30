@@ -28,6 +28,31 @@ describe('parseChartTime', () => {
 		assert.equal(parseChartDate('2026-08'), '2026-08-01');
 	});
 
+	it('treats unpadded YYYY-M-D / YYYY-MM-D as calendar days', () => {
+		const a = parseChartTime('2026-8-3');
+		const b = parseChartTime('2026-08-3');
+		const c = parseChartTime('2026-8-03');
+		const d = parseChartTime('2026-08-03');
+		assert.equal(a?.kind, 'day');
+		assert.equal(a?.label, '2026-08-03');
+		assert.equal(a?.t, d?.t);
+		assert.equal(b?.t, d?.t);
+		assert.equal(c?.t, d?.t);
+		assert.equal(parseChartDate('2026-8-3'), '2026-08-03');
+		assert.equal(parseChartTime('2026-08-30T15:04:00')?.label, '2026-08-30');
+	});
+
+	it('rejects three-number labels whose month is not 1–12', () => {
+		assert.equal(parseChartTime('2026-55-16'), null);
+		assert.equal(parseChartTime('2026-45-5'), null);
+		assert.equal(parseChartTime('2026-45-28'), null);
+		assert.equal(parseChartTime('2026-13-01'), null);
+		assert.equal(parseChartTime('2026-00-10'), null);
+		assert.equal(parseChartTime('2026-02-30'), null);
+		assert.equal(parseChartTime('2026-04-31'), null);
+		assert.equal(hasTimeCategories(['2026-55-16', '2026-45-5', '2026-45-28', '2026-52-10']), false);
+	});
+
 	it('ignores plain numbers and non-dates', () => {
 		assert.equal(parseChartTime('2026'), null);
 		assert.equal(parseChartTime('alpha'), null);
@@ -51,6 +76,14 @@ describe('compareTimeLabels', () => {
 		assert.ok(compareTimeLabels('2025-W52', '2026-W01') < 0);
 		assert.ok(compareTimeLabels('2026-W9', '2026-W10') < 0);
 	});
+
+	it('orders unpadded days by timestamp, not localeCompare', () => {
+		assert.ok(compareTimeLabels('2026-8-3', '2026-8-28') < 0);
+		assert.ok(compareTimeLabels('2026-8-9', '2026-8-10') < 0);
+		assert.ok(compareTimeLabels('2026-8-10', '2026-8-9') > 0);
+		assert.equal('2026-8-9'.localeCompare('2026-8-10') > 0, true);
+		assert.ok(compareTimeLabels('2026-08-03', '2026-8-28') < 0);
+	});
 });
 
 describe('fillTimeCategories', () => {
@@ -69,6 +102,7 @@ describe('fillTimeCategories', () => {
 			'2026-01-02',
 			'2026-01-03',
 		]);
+		assert.deepEqual(fillTimeCategories(['2026-8-3', '2026-8-1']), ['2026-8-1', '2026-08-02', '2026-8-3']);
 	});
 
 	it('never emits a literal (empty) category', () => {
