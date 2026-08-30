@@ -49,7 +49,7 @@ export type ChartType = (typeof CHART_TYPES)[number];
 export const AGGREGATIONS = ['count', 'sum', 'average', 'median'] as const;
 export type Aggregation = (typeof AGGREGATIONS)[number];
 
-export const SORT_MODES = ['value-desc', 'value-asc', 'label-asc', 'label-desc'] as const;
+export const SORT_MODES = ['time-asc', 'time-desc', 'value-desc', 'value-asc', 'label-asc', 'label-desc'] as const;
 export type SortMode = (typeof SORT_MODES)[number];
 
 export const DEFAULT_EXCLUDED_TAGS = [

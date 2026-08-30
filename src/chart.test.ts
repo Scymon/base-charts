@@ -10,6 +10,7 @@ import {
 	chartCoordFamily,
 	CHART_OPTION_REPLACE_MERGE,
 	hasDateCategories,
+	initialCategoryWindow,
 	icicleLabelVisible,
 	logSafeValue,
 	marimekkoWidths,
@@ -478,6 +479,7 @@ describe('buildChartOption', () => {
 		assert.equal(still.animation, false);
 		assert.equal(categoryWindowHint(16, 20), '16 of 20 categories');
 		assert.equal(categoryWindowHint(8, 8), null);
+		assert.equal(categoryWindowHint(33, 33), null);
 	});
 
 	it('builds a finished treemap with roam, breadcrumb, and label overflow handling', () => {
@@ -773,6 +775,46 @@ describe('buildChartOption', () => {
 		const bins = violinSeries?.data?.[0]?.bins ?? [];
 		assert.ok(bins.some((bin) => bin.mid > 250 && bin.count > 0));
 		assert.ok(bins.reduce((sum, bin) => sum + bin.count, 0) === 4);
+	});
+
+	it('shows every time category instead of clipping the first 16', () => {
+		const weeks = Array.from({ length: 33 }, (_, index) => {
+			const week = index + 1;
+			return {
+				xLabels: [`2026-W${String(week).padStart(2, '0')}`],
+				seriesLabels: ['east'],
+				y: 33 - index,
+				xNumeric: null,
+				fileName: `note-${week}`,
+			};
+		});
+		const stacked = aggregateRows(
+			weeks,
+			settings({ chartType: 'area-stacked', aggregation: 'sum', sort: 'time-asc', maxCategories: 40 }),
+		);
+		assert.ok(stacked.categories.length >= 33);
+		assert.equal(stacked.categories[0], '2026-W01');
+		assert.equal(hasDateCategories(stacked.categories), true);
+		assert.equal(initialCategoryWindow(stacked.categories), stacked.categories.length);
+		const option = buildChartOption(
+			stacked,
+			settings({ chartType: 'area-stacked', sort: 'time-asc', maxCategories: 40 }),
+			theme,
+			false,
+		);
+		const zooms = option.dataZoom as { start?: number; end?: number }[] | undefined;
+		assert.ok(Array.isArray(zooms));
+		assert.equal(zooms[0]?.start, 0);
+		assert.equal(zooms[0]?.end, 100);
+		const xAxis = option.xAxis as { data?: string[] };
+		assert.equal(xAxis.data?.length, stacked.categories.length);
+		assert.equal(categoryWindowHint(stacked.categories.length, stacked.categories.length), null);
+	});
+
+	it('keeps the 16-category zoom window on dense tag charts', () => {
+		const labels = Array.from({ length: 20 }, (_, index) => `topic-${index}`);
+		assert.equal(initialCategoryWindow(labels), 16);
+		assert.equal(hasDateCategories(labels), false);
 	});
 
 	it('degrades bar race to a ranked bar when X is not dates', () => {

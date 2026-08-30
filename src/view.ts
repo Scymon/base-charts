@@ -47,9 +47,11 @@ import {
 	buildChartOption,
 	categoryWindowHint,
 	CHART_OPTION_REPLACE_MERGE,
+	initialCategoryWindow,
 	shouldResetChart,
 	ZOOM_AFTER,
 } from './chart.ts';
+import { inferUnspecifiedSort } from './time.ts';
 import { pickOpenNote, resolveClickNotes, shouldOpenNotesOnClick } from './click.ts';
 import { notePathFromTarget } from './tooltip.ts';
 import { prefersReducedMotion, readChartTheme } from './theme.ts';
@@ -115,6 +117,7 @@ export class MotionChartView extends BasesView {
 	private chart: echarts.ECharts | null = null;
 	private resizeObserver: ResizeObserver | null = null;
 	private defaultsApplied = false;
+	private timeSortApplied = false;
 	private lastData: AggregatedChart | null = null;
 	private clickBound = false;
 	private drillName: string | null = null;
@@ -177,14 +180,26 @@ export class MotionChartView extends BasesView {
 		}
 	}
 
+	private applyDefaultTimeSort(rows: RawRow[]): void {
+		if (this.timeSortApplied) return;
+		this.timeSortApplied = true;
+		const labels = rows.flatMap((row) => row.xLabels);
+		const inferred = inferUnspecifiedSort(this.config.get('sort'), labels);
+		if (inferred !== this.config.get('sort')) {
+			this.config.set('sort', inferred);
+		}
+	}
+
 	private render(): void {
-		const settings = this.readSettings();
+		let settings = this.readSettings();
 		const resetChart = shouldResetChart(this.lastChartType, settings.chartType);
 		if (this.lastChartType !== settings.chartType) {
 			this.drillName = null;
 			this.lastChartType = settings.chartType;
 		}
 		const rows = this.collectRows(settings);
+		this.applyDefaultTimeSort(rows);
+		settings = this.readSettings();
 		const aggregated = aggregateRows(rows, settings);
 		this.lastData = aggregated;
 		const hasValues =
@@ -242,7 +257,7 @@ export class MotionChartView extends BasesView {
 
 	private updateHint(data: AggregatedChart): void {
 		const total = data.categories.length;
-		const visible = Math.min(total, 16);
+		const visible = initialCategoryWindow(data.categories);
 		const text = categoryWindowHint(visible, total);
 		if (!text) {
 			this.hintEl.hide();
@@ -277,7 +292,13 @@ export class MotionChartView extends BasesView {
 				if (total < ZOOM_AFTER) return;
 				const shown = Math.max(1, Math.round(((end - start) / 100) * total));
 				const text = categoryWindowHint(shown, total);
-				if (text) this.hintEl.setText(text);
+				if (text) {
+					this.hintEl.setText(text);
+					this.hintEl.show();
+				} else {
+					this.hintEl.hide();
+					this.hintEl.setText('');
+				}
 			});
 		}
 		return this.chart;

@@ -4,7 +4,8 @@ import type {
 	EChartsOption,
 	SeriesOption,
 } from 'echarts';
-import { binCounts, boxFive, parseChartDate } from './aggregate.ts';
+import { binCounts, boxFive } from './aggregate.ts';
+import { hasTimeCategories } from './time.ts';
 import { formatAxisTick, formatNumber } from './format.ts';
 import { formatCategoryTooltip } from './tooltip.ts';
 import type { AggregatedChart, ChartSettings, ChartTheme } from './types.ts';
@@ -76,6 +77,7 @@ const ZOOM_TYPES = new Set<ChartSettings['chartType']>([
 ]);
 
 export const ZOOM_AFTER = 12;
+export const ZOOM_WINDOW = 16;
 export const TREEMAP_LABEL_MIN_SHOW = 16;
 
 export function usesCartesianGrid(chartType: ChartSettings['chartType']): boolean {
@@ -243,7 +245,15 @@ function cartesianGrid(
 
 export function categoryWindowHint(visible: number, total: number): string | null {
 	if (total < ZOOM_AFTER) return null;
+	if (visible >= total) return null;
 	return `${visible} of ${total} categories`;
+}
+
+/** Initial visible category count. Time axes show the full range; tag charts window to 16. */
+export function initialCategoryWindow(categories: string[]): number {
+	if (categories.length < ZOOM_AFTER) return categories.length;
+	if (hasTimeCategories(categories)) return categories.length;
+	return Math.min(categories.length, ZOOM_WINDOW);
 }
 
 export function treemapLabelLayout(params: { rect?: { width?: number; height?: number }; text?: string }) {
@@ -335,7 +345,7 @@ function dataZoomOption(data: AggregatedChart, settings: ChartSettings, horizont
 	if (!ZOOM_TYPES.has(settings.chartType) || data.categories.length < ZOOM_AFTER) {
 		return { dataZoom: undefined, windowSize: data.categories.length };
 	}
-	const windowSize = Math.min(data.categories.length, 16);
+	const windowSize = initialCategoryWindow(data.categories);
 	const end = Math.min(100, (windowSize / data.categories.length) * 100);
 	const axis = horizontal ? { yAxisIndex: 0 } : { xAxisIndex: 0 };
 	return {
@@ -1421,9 +1431,7 @@ function layoutIcicle(
 }
 
 export function hasDateCategories(categories: string[]): boolean {
-	if (categories.length === 0) return false;
-	const dated = categories.filter((category) => parseChartDate(category));
-	return dated.length >= Math.max(1, Math.ceil(categories.length * 0.5));
+	return hasTimeCategories(categories);
 }
 
 export function sturgesBinCount(n: number): number {

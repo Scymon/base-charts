@@ -153,6 +153,87 @@ describe('aggregateRows', () => {
 		assert.equal(result.values[0]?.[index], 12);
 	});
 
+	it('orders ISO weeks by Time old → new even when Y is highest first', () => {
+		const weeks: RawRow[] = [
+			{ xLabels: ['2026-W32'], seriesLabels: ['Main'], y: 900, xNumeric: null, fileName: 'a' },
+			{ xLabels: ['2026-W16'], seriesLabels: ['Main'], y: 100, xNumeric: null, fileName: 'b' },
+			{ xLabels: ['2026-W35'], seriesLabels: ['Main'], y: 400, xNumeric: null, fileName: 'c' },
+			{ xLabels: ['2026-W33'], seriesLabels: ['Main'], y: 200, xNumeric: null, fileName: 'd' },
+		];
+		const result = aggregateRows(weeks, settings({ chartType: 'area-stacked', aggregation: 'sum', sort: 'time-asc' }));
+		const populated = result.categories.filter((_, index) => (result.values[0]?.[index] ?? 0) > 0);
+		assert.deepEqual(populated, ['2026-W16', '2026-W32', '2026-W33', '2026-W35']);
+		assert.ok(result.categories.indexOf('2026-W16') < result.categories.indexOf('2026-W32'));
+		assert.ok(result.categories.indexOf('2026-W32') < result.categories.indexOf('2026-W33'));
+	});
+
+	it('Label A–Z keeps zero-padded ISO weeks in calendar order', () => {
+		const weeks: RawRow[] = [
+			{ xLabels: ['2026-W32'], seriesLabels: [], y: 900, xNumeric: null, fileName: 'a' },
+			{ xLabels: ['2026-W16'], seriesLabels: [], y: 100, xNumeric: null, fileName: 'b' },
+			{ xLabels: ['2026-W35'], seriesLabels: [], y: 400, xNumeric: null, fileName: 'c' },
+		];
+		const result = aggregateRows(weeks, settings({ sort: 'label-asc', aggregation: 'sum' }));
+		const populated = result.categories.filter((_, index) => (result.values[0]?.[index] ?? 0) > 0);
+		assert.deepEqual(populated, ['2026-W16', '2026-W32', '2026-W35']);
+	});
+
+	it('still sorts tag charts by value high to low', () => {
+		const tagged: RawRow[] = [
+			{ xLabels: ['cooking'], seriesLabels: [], y: 100, xNumeric: null, fileName: 'a' },
+			{ xLabels: ['comedy'], seriesLabels: [], y: 500, xNumeric: null, fileName: 'b' },
+		];
+		const result = aggregateRows(tagged, settings({ sort: 'value-desc', aggregation: 'sum' }));
+		assert.deepEqual(result.categories, ['comedy', 'cooking']);
+	});
+
+	it('fills missing weeks on a time axis so empty periods stay on the calendar', () => {
+		const weeks: RawRow[] = [
+			{ xLabels: ['2026-W01'], seriesLabels: ['east'], y: 10, xNumeric: null, fileName: 'a' },
+			{ xLabels: ['2026-W10'], seriesLabels: ['east'], y: 20, xNumeric: null, fileName: 'b' },
+			{ xLabels: ['2026-W10'], seriesLabels: ['west'], y: 5, xNumeric: null, fileName: 'c' },
+		];
+		const result = aggregateRows(
+			weeks,
+			settings({ chartType: 'area-stacked', aggregation: 'sum', sort: 'time-asc', filterEmptyY: true }),
+		);
+		assert.equal(result.categories.length, 10);
+		assert.deepEqual(result.categories.slice(0, 3), ['2026-W01', '2026-W02', '2026-W03']);
+		assert.equal(result.categories[9], '2026-W10');
+		const east = result.seriesNames.indexOf('east');
+		assert.equal(result.values[east]?.[0], 10);
+		assert.equal(result.values[east]?.[1], 0);
+		assert.equal(result.values[east]?.[9], 20);
+		assert.deepEqual(result.notes[east]?.[1], []);
+	});
+
+	it('caps a time axis to the most recent populated periods, then fills that window', () => {
+		const weeks: RawRow[] = [
+			{ xLabels: ['2026-W10'], seriesLabels: [], y: 10, xNumeric: null, fileName: 'a' },
+			{ xLabels: ['2026-W12'], seriesLabels: [], y: 999, xNumeric: null, fileName: 'b' },
+			{ xLabels: ['2026-W20'], seriesLabels: [], y: 5, xNumeric: null, fileName: 'c' },
+			{ xLabels: ['2026-W21'], seriesLabels: [], y: 7, xNumeric: null, fileName: 'd' },
+		];
+		const result = aggregateRows(
+			weeks,
+			settings({ chartType: 'line', aggregation: 'sum', sort: 'time-asc', maxCategories: 2 }),
+		);
+		assert.ok(result.categories.includes('2026-W20'));
+		assert.ok(result.categories.includes('2026-W21'));
+		assert.equal(result.categories.includes('2026-W10'), false);
+		assert.equal(result.categories.includes('2026-W12'), false);
+		assert.deepEqual(result.categories, ['2026-W20', '2026-W21']);
+	});
+
+	it('does not invent empty weeks on sankey', () => {
+		const weeks: RawRow[] = [
+			{ xLabels: ['2026-W01'], seriesLabels: ['east'], y: 10, xNumeric: null, fileName: 'a' },
+			{ xLabels: ['2026-W10'], seriesLabels: ['east'], y: 20, xNumeric: null, fileName: 'b' },
+		];
+		const result = aggregateRows(weeks, settings({ chartType: 'sankey', aggregation: 'sum', sort: 'time-asc' }));
+		assert.deepEqual(result.categories, ['2026-W01', '2026-W10']);
+	});
+
 	it('uses file names as bar-race contestants when series-by is empty', () => {
 		const dated: RawRow[] = [
 			{ xLabels: ['2024-01-01'], seriesLabels: [], y: 10, xNumeric: null, fileName: 'north' },

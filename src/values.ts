@@ -41,6 +41,25 @@ export function asNumber(value: Value | null | undefined): number | null {
 	return percent ? parsed : parsed;
 }
 
+function readDate(value: Value): Date | null {
+	if (value instanceof Date && Number.isFinite(value.getTime())) return value;
+	const boxed = value as { value?: unknown };
+	if (boxed.value instanceof Date && Number.isFinite(boxed.value.getTime())) return boxed.value;
+	return null;
+}
+
+function labelFromValue(value: Value): string | null {
+	const date = readDate(value);
+	if (date) {
+		const year = date.getFullYear();
+		const month = String(date.getMonth() + 1).padStart(2, '0');
+		const day = String(date.getDate()).padStart(2, '0');
+		return `${year}-${month}-${day}`;
+	}
+	const text = value.toString().trim();
+	return text ? normalizeTag(text) : null;
+}
+
 export function categoryLabels(value: Value | null | undefined): string[] {
 	if (isEmptyValue(value) || value == null) return [];
 	if (isListValue(value)) {
@@ -48,13 +67,12 @@ export function categoryLabels(value: Value | null | undefined): string[] {
 		for (let i = 0; i < value.length(); i++) {
 			const item = value.get(i);
 			if (isEmptyValue(item)) continue;
-			const text = item.toString().trim();
-			if (text) labels.push(normalizeTag(text));
+			const text = labelFromValue(item);
+			if (text) labels.push(text);
 		}
 		return labels;
 	}
 
-	const text = value.toString().trim();
-	if (!text) return [];
-	return [normalizeTag(text)];
+	const text = labelFromValue(value);
+	return text ? [text] : [];
 }
