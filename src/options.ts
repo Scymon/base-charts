@@ -115,6 +115,15 @@ export function viewOptions(config: BasesViewConfig): BasesAllOptions[] {
 			step: 1,
 		},
 		{
+			type: 'slider',
+			key: 'minCategoryNotes',
+			displayName: 'Min notes per category',
+			default: 1,
+			min: 1,
+			max: 20,
+			step: 1,
+		},
+		{
 			type: 'multitext',
 			key: 'excludedTags',
 			displayName: 'Exclude tags',

@@ -19,6 +19,7 @@ const settings = (overrides: Partial<ChartSettings> = {}): ChartSettings => ({
 	logY: false,
 	excludedTags: DEFAULT_EXCLUDED_TAGS,
 	maxCategories: 80,
+	minCategoryNotes: 1,
 	...overrides,
 });
 

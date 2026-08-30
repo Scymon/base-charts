@@ -75,6 +75,8 @@ export interface ChartSettings {
 	logY: boolean;
 	excludedTags: string[];
 	maxCategories: number;
+	/** Distinct notes required in an X category. 1 keeps every category (no sift). */
+	minCategoryNotes: number;
 }
 
 export interface RawRow {

@@ -394,6 +394,7 @@ export class MotionChartView extends BasesView {
 			logY: asBool(config.get('logY'), false),
 			excludedTags: parseExcludedTags(config.get('excludedTags'), DEFAULT_EXCLUDED_TAGS),
 			maxCategories: asNumberSetting(config.get('maxCategories'), 30),
+			minCategoryNotes: Math.max(1, Math.floor(asNumberSetting(config.get('minCategoryNotes'), 1))),
 		};
 	}
 
