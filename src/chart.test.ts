@@ -16,7 +16,6 @@ import {
 	SLIDER_HANDLE_ICON,
 	SLIDER_HANDLE_SIZE,
 	SLIDER_HEIGHT,
-	sliderAreaGradient,
 	logSafeValue,
 	marimekkoWidths,
 	shouldApplyLogY,
@@ -549,14 +548,15 @@ describe('buildChartOption', () => {
 			handleSize?: string | number;
 			fillerColor?: string;
 			handleStyle?: { color?: string };
+			emphasis?: { handleStyle?: { color?: string } };
 			yAxisIndex?: number;
 			dataBackground?: {
-				lineStyle?: { width?: number };
-				areaStyle?: { color?: { type?: string; y2?: number; colorStops?: { offset: number; color: string }[] } };
+				lineStyle?: { width?: number; color?: string };
+				areaStyle?: { color?: unknown; opacity?: number };
 			};
 			selectedDataBackground?: {
-				lineStyle?: { width?: number };
-				areaStyle?: { color?: { type?: string; colorStops?: { offset: number; color: string }[] } };
+				lineStyle?: { width?: number; color?: string };
+				areaStyle?: { color?: unknown; opacity?: number };
 			};
 			showDetail?: boolean;
 			brushSelect?: boolean;
@@ -569,23 +569,24 @@ describe('buildChartOption', () => {
 		assert.match(slider?.handleIcon ?? '', /A50,50|circle/i);
 		assert.equal(slider?.handleIcon?.includes('L8,20'), false);
 		assert.equal(slider?.handleSize, SLIDER_HANDLE_SIZE);
-		assert.ok((slider?.height ?? 0) >= 18 && (slider?.height ?? 0) <= 24);
+		assert.equal(typeof slider?.handleSize, 'number');
+		assert.ok((slider?.handleSize as number) >= 10 && (slider?.handleSize as number) <= 12);
+		assert.notEqual(slider?.handleSize, '100%');
+		assert.ok((slider?.height ?? 0) >= 10 && (slider?.height ?? 0) <= 12);
 		assert.equal(slider?.height, SLIDER_HEIGHT);
+		assert.ok(SLIDER_HEIGHT < 18);
 		assert.equal(slider?.showDetail, false);
 		assert.equal(slider?.brushSelect, false);
-		assert.ok((slider?.dataBackground?.lineStyle?.width ?? 0) >= 1);
-		assert.ok((slider?.dataBackground?.lineStyle?.width ?? 0) <= 1.5);
-		assert.ok((slider?.selectedDataBackground?.lineStyle?.width ?? 0) >= 1);
-		assert.equal(slider?.dataBackground?.areaStyle?.color?.type, 'linear');
-		assert.equal(slider?.dataBackground?.areaStyle?.color?.y2, 1);
-		assert.deepEqual(slider?.dataBackground?.areaStyle?.color, sliderAreaGradient(theme.accent, 0.28));
-		assert.deepEqual(slider?.selectedDataBackground?.areaStyle?.color, sliderAreaGradient(theme.accent, 0.38));
-		assert.equal(slider?.fillerColor, colorAlpha(theme.accent, 0.16));
-		assert.equal(slider?.handleStyle?.color, colorAlpha(theme.accent, 0.5));
-		const fade = slider?.dataBackground?.areaStyle?.color?.colorStops ?? [];
-		assert.equal(fade[0]?.color, colorAlpha(theme.accent, 0.28));
-		assert.equal(fade[1]?.color, colorAlpha(theme.accent, 0));
-		assert.ok((fade[1]?.offset ?? 0) > (fade[0]?.offset ?? 1));
+		assert.equal(slider?.dataBackground?.lineStyle?.width, 1);
+		assert.equal(slider?.selectedDataBackground?.lineStyle?.width, 1);
+		assert.equal(slider?.dataBackground?.lineStyle?.color, colorAlpha(theme.text, 0.35));
+		assert.equal(slider?.dataBackground?.areaStyle?.color, 'transparent');
+		assert.equal(slider?.dataBackground?.areaStyle?.opacity, 0);
+		assert.equal(slider?.selectedDataBackground?.areaStyle?.color, 'transparent');
+		assert.equal(slider?.selectedDataBackground?.areaStyle?.opacity, 0);
+		assert.equal(slider?.fillerColor, colorAlpha(theme.accent, 0.1));
+		assert.equal(slider?.handleStyle?.color, colorAlpha(theme.accent, 0.35));
+		assert.ok((slider?.emphasis?.handleStyle?.color ?? '').includes('0.78'));
 
 		const sideways = buildChartOption(
 			dense,
@@ -1059,5 +1060,7 @@ describe('chart chrome css', () => {
 		assert.match(css, /\.motion-chart-has-slider::after/);
 		assert.match(css, /\.motion-chart-has-slider-vertical::after/);
 		assert.match(css, /pointer-events:\s*none/);
+		assert.match(css, /color-mix\(in srgb, var\(--text-muted, #888\) 18%, transparent\)/);
+		assert.equal(css.includes('42%'), false);
 	});
 });

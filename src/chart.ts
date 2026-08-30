@@ -78,7 +78,7 @@ const ZOOM_TYPES = new Set<ChartSettings['chartType']>([
 
 export const ZOOM_AFTER = 12;
 export const ZOOM_WINDOW = 16;
-export const SLIDER_HEIGHT = 22;
+export const SLIDER_HEIGHT = 12;
 export const SLIDER_RESERVE = 36;
 /** Bottom (horizontal slider) / right (vertical slider) inset from the canvas edge. */
 export const SLIDER_EDGE = 8;
@@ -87,12 +87,12 @@ export const SLIDER_START = 48;
 /** Right (horizontal) / bottom (vertical) inset. */
 export const SLIDER_END = 20;
 /**
- * Circle path for the zoom-window drag handles. handleSize 100% makes each end
- * a full-height circle so the selected range reads as a pill.
+ * Circle path for the zoom-window drag handles. Pixel handleSize (~10) keeps
+ * them as small knobs on the track, not full-height sausage caps.
  */
 export const SLIDER_HANDLE_ICON =
 	'path://M50,0 A50,50 0 1 1 50,100 A50,50 0 1 1 50,0 Z';
-export const SLIDER_HANDLE_SIZE = '100%';
+export const SLIDER_HANDLE_SIZE = 10;
 export const TREEMAP_LABEL_MIN_SHOW = 16;
 
 export function usesCartesianGrid(chartType: ChartSettings['chartType']): boolean {
@@ -314,23 +314,6 @@ export function colorAlpha(color: string, alpha: number): string {
 	return color;
 }
 
-/** Vertical fade used under the slider waveform (opaque-ish at the data edge). */
-export function sliderAreaGradient(color: string, topAlpha: number) {
-	return {
-		type: 'linear' as const,
-		x: 0,
-		y: 0,
-		x2: 0,
-		y2: 1,
-		colorStops: [
-			// zrender builds this gradient in the element's bounding box after
-			// the slider group's scaleY flip, so offset 0 is the visual top
-			// (waveform ridge) and offset 1 is the baseline.
-			{ offset: 0, color: colorAlpha(color, topAlpha) },
-			{ offset: 1, color: colorAlpha(color, 0) },
-		],
-	};
-}
 
 function zoomStartEnd(
 	categories: string[],
@@ -446,11 +429,11 @@ function dataZoomOption(
 	const { start, end } = zoomStartEnd(data.categories, settings.sort, windowSize);
 	const axis = horizontal ? { yAxisIndex: 0 } : { xAxisIndex: 0 };
 	const accent = theme.accent;
-	const filler = colorAlpha(accent, 0.16);
-	const handle = colorAlpha(accent, 0.5);
-	const hover = colorAlpha(accent, 0.92);
-	const edgeLine = colorAlpha(theme.text, 0.32);
-	const selectedLine = colorAlpha(theme.text, 0.48);
+	const filler = colorAlpha(accent, 0.1);
+	const handle = colorAlpha(accent, 0.35);
+	const hover = colorAlpha(accent, 0.78);
+	const edgeLine = colorAlpha(theme.text, 0.35);
+	const selectedLine = colorAlpha(theme.text, 0.45);
 	return {
 		dataZoom: [
 			{
@@ -492,28 +475,28 @@ function dataZoomOption(
 					color: colorAlpha(accent, 0.35),
 					opacity: 0.5,
 				},
+				// ECharts SliderZoomView paints dataBackground as a Polygon
+				// inside a scaleY:-1 group. Linear areaStyle.color is ignored
+				// or flattened to the first stop, so a gradient still ships as
+				// a solid mountain. Keep a 1px ridge line only.
 				dataBackground: {
 					lineStyle: {
 						color: edgeLine,
-						width: 1.25,
-						shadowBlur: 3,
-						shadowColor: colorAlpha(theme.text, 0.22),
+						width: 1,
 					},
 					areaStyle: {
-						color: sliderAreaGradient(accent, 0.28),
-						opacity: 1,
+						color: 'transparent',
+						opacity: 0,
 					},
 				},
 				selectedDataBackground: {
 					lineStyle: {
 						color: selectedLine,
-						width: 1.5,
-						shadowBlur: 3,
-						shadowColor: colorAlpha(accent, 0.25),
+						width: 1,
 					},
 					areaStyle: {
-						color: sliderAreaGradient(accent, 0.38),
-						opacity: 1,
+						color: 'transparent',
+						opacity: 0,
 					},
 				},
 				emphasis: {
