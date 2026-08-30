@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { aggregateRows } from './aggregate.ts';
-import { formatCategoryTooltip, notePathFromTarget, propertyLabel } from './tooltip.ts';
+import { ellipsisClickPayload } from './axisLabels.ts';
+import { formatCategoryTooltip, formatSkippedLabelsTooltip, notePathFromTarget, propertyLabel } from './tooltip.ts';
 import { DEFAULT_EXCLUDED_TAGS, type AggregatedChart, type ChartSettings, type RawRow } from './types.ts';
 
 const settings = (overrides: Partial<ChartSettings> = {}): ChartSettings => ({
@@ -344,6 +345,46 @@ describe('formatCategoryTooltip', () => {
 		const html = formatCategoryTooltip({ name: 'alpha' }, data, settings());
 		assert.match(html, /A &lt;b&gt;bold&lt;\/b&gt; &amp; &quot;quoted&quot;/);
 		assert.equal(html.includes('<b>bold</b>'), false);
+	});
+});
+
+describe('formatSkippedLabelsTooltip', () => {
+	it('lists the skipped category names with tooltip chrome, not hardcoded vault fields', () => {
+		const labels = Array.from({ length: 12 }, (_, index) => `topic-${index}`);
+		const rows: RawRow[] = labels.map((label, index) => ({
+			xLabels: [label],
+			seriesLabels: [],
+			y: 10 + index,
+			xNumeric: null,
+			fileName: `note-${index}`,
+		}));
+		const data = aggregateRows(rows, settings());
+		const first = data.categories[2] ?? '';
+		const last = data.categories[8] ?? '';
+		assert.ok(first && last);
+		const html = formatCategoryTooltip(ellipsisClickPayload(2, 8), data, settings());
+		assert.match(html, /motion-chart-tooltip/);
+		assert.match(html, /motion-chart-tooltip-title/);
+		assert.match(html, /topic/);
+		assert.match(html, /n 7/);
+		assert.match(html, new RegExp(first));
+		assert.match(html, new RegExp(last));
+		assert.equal(html.includes('Score'), false);
+		assert.equal(html.includes('tags'), false);
+		assert.equal(html.includes('Shorts'), false);
+		assert.equal(html.includes('Channel'), false);
+	});
+
+	it('caps a huge skipped run to first/last plus count', () => {
+		const labels = Array.from({ length: 400 }, (_, index) => `day-${index}`);
+		const html = formatSkippedLabelsTooltip(labels, settings({ xProperty: 'note.published' }));
+		assert.match(html, /published/);
+		assert.match(html, /n 400/);
+		assert.match(html, /day-0/);
+		assert.match(html, /day-399/);
+		assert.equal(html.includes('day-200'), false);
+		assert.ok((html.match(/motion-chart-tooltip-note"/g) ?? []).length < 40);
+		assert.equal(html.includes('Score'), false);
 	});
 });
 

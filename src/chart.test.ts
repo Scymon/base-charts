@@ -135,10 +135,14 @@ describe('buildChartOption', () => {
 		assert.equal((rose.series as { roseType?: string }[])[0]?.roseType, 'area');
 	});
 
-	it('shows every rotated X label on cartesian charts', () => {
+	it('rotates sparse cartesian X labels and keeps every name that still fits', () => {
 		const option = buildChartOption(data, settings(), theme, false);
-		const xAxis = option.xAxis as { axisLabel?: { interval?: number; hideOverlap?: boolean; rotate?: number } };
-		assert.equal(xAxis.axisLabel?.interval, 0);
+		const xAxis = option.xAxis as {
+			axisLabel?: { interval?: number | ((index: number) => boolean); hideOverlap?: boolean; rotate?: number };
+		};
+		assert.equal(typeof xAxis.axisLabel?.interval, 'function');
+		assert.equal((xAxis.axisLabel?.interval as (index: number) => boolean)(0), true);
+		assert.equal((xAxis.axisLabel?.interval as (index: number) => boolean)(1), true);
 		assert.equal(xAxis.axisLabel?.hideOverlap, false);
 		assert.ok((xAxis.axisLabel?.rotate ?? 0) > 0);
 	});
@@ -179,12 +183,16 @@ describe('buildChartOption', () => {
 		const xAxis = firstOf(
 			option.xAxis as {
 				data?: string[];
-				axisLabel?: { interval?: number | string; hideOverlap?: boolean; rotate?: number };
+				axisLabel?: { interval?: number | string | ((index: number) => boolean); hideOverlap?: boolean; rotate?: number };
 			},
 		);
 		const grid = firstOf(option.grid as { bottom?: number });
 		assert.equal(xAxis?.data?.length, 12);
-		assert.equal(xAxis?.axisLabel?.interval, 0);
+		assert.equal(typeof xAxis?.axisLabel?.interval, 'function');
+		const interval = xAxis?.axisLabel?.interval as (index: number) => boolean;
+		for (let index = 0; index < 12; index += 1) {
+			assert.equal(interval(index), true, `label ${index} should still fit`);
+		}
 		assert.equal(xAxis?.axisLabel?.hideOverlap, false);
 		assert.ok((xAxis?.axisLabel?.rotate ?? 0) > 0);
 		assert.ok((grid?.bottom ?? 0) >= 100);
@@ -195,17 +203,21 @@ describe('buildChartOption', () => {
 		const yAxis = horizontal.yAxis as {
 			axisLabel?: { interval?: number | string; hideOverlap?: boolean; rotate?: number };
 		};
-		assert.equal(yAxis.axisLabel?.interval, 0);
+		assert.equal(typeof yAxis.axisLabel?.interval, 'function');
+		assert.equal((yAxis.axisLabel?.interval as (index: number) => boolean)(0), true);
 		assert.equal(yAxis.axisLabel?.hideOverlap, false);
 		assert.equal(yAxis.axisLabel?.rotate ?? 0, 0);
 
 		const heat = buildChartOption(data, settings({ chartType: 'heatmap' }), theme, false);
-		const heatX = heat.xAxis as { axisLabel?: { interval?: number; hideOverlap?: boolean; rotate?: number } };
-		const heatY = heat.yAxis as { axisLabel?: { interval?: number; hideOverlap?: boolean } };
-		assert.equal(heatX.axisLabel?.interval, 0);
+		const heatX = heat.xAxis as {
+			axisLabel?: { interval?: number | ((index: number) => boolean); hideOverlap?: boolean; rotate?: number };
+		};
+		const heatY = heat.yAxis as { axisLabel?: { interval?: number | ((index: number) => boolean); hideOverlap?: boolean } };
+		assert.equal(typeof heatX.axisLabel?.interval, 'function');
+		assert.equal((heatX.axisLabel?.interval as (index: number) => boolean)(0), true);
 		assert.equal(heatX.axisLabel?.hideOverlap, false);
 		assert.ok((heatX.axisLabel?.rotate ?? 0) > 0);
-		assert.equal(heatY.axisLabel?.interval, 0);
+		assert.equal(typeof heatY.axisLabel?.interval, 'function');
 		assert.equal(heatY.axisLabel?.hideOverlap, false);
 	});
 
@@ -316,6 +328,7 @@ describe('buildChartOption', () => {
 		assert.ok(CHART_OPTION_REPLACE_MERGE.includes('grid'));
 		assert.ok(CHART_OPTION_REPLACE_MERGE.includes('tooltip'));
 		assert.ok(CHART_OPTION_REPLACE_MERGE.includes('legend'));
+		assert.ok(CHART_OPTION_REPLACE_MERGE.includes('graphic'));
 	});
 
 	it('does not let a scatter Likes formatter leak onto a heatmap tags tooltip', () => {
@@ -808,9 +821,38 @@ describe('buildChartOption', () => {
 		assert.equal(typeof axes[0]?.axisLabel?.formatter, 'function');
 		assert.equal(typeof axes[1]?.axisLabel?.formatter, 'function');
 		const bar = buildChartOption(data, settings(), theme, false);
-		const xAxis = bar.xAxis as { axisLabel?: { interval?: number; hideOverlap?: boolean } };
-		assert.equal(xAxis.axisLabel?.interval, 0);
+		const xAxis = bar.xAxis as { axisLabel?: { interval?: number | ((index: number) => boolean); hideOverlap?: boolean } };
+		assert.equal(typeof xAxis.axisLabel?.interval, 'function');
 		assert.equal(xAxis.axisLabel?.hideOverlap, false);
+	});
+
+	it('thins dense cartesian categories so collapsed runs can become ellipsis ticks', () => {
+		const labels = Array.from({ length: 80 }, (_, index) => `topic-${index}`);
+		const dense = aggregateRows(
+			labels.map((label, index) => ({
+				xLabels: [label],
+				seriesLabels: [],
+				y: 100 + index,
+				xNumeric: null,
+				fileName: `note-${index}`,
+			})),
+			settings({ maxCategories: 80 }),
+		);
+		const option = buildChartOption(dense, settings({ maxCategories: 80 }), theme, false);
+		const xAxis = firstOf(
+			option.xAxis as {
+				axisLabel?: { interval?: (index: number) => boolean; rotate?: number; hideOverlap?: boolean };
+			},
+		);
+		const interval = xAxis?.axisLabel?.interval;
+		assert.equal(typeof interval, 'function');
+		assert.equal(interval?.(0), true);
+		assert.equal(interval?.(79), true);
+		const shown = labels.map((_, index) => interval?.(index)).filter(Boolean);
+		assert.ok(shown.length < labels.length);
+		assert.equal(xAxis?.axisLabel?.hideOverlap, false);
+		assert.ok((xAxis?.axisLabel?.rotate ?? 0) > 0);
+		assert.equal(JSON.stringify(option).includes('Score'), false);
 	});
 
 	it('opens notes on a treemap leaf but not an un-modified parent zoom click', () => {
@@ -1139,6 +1181,7 @@ describe('chart chrome css', () => {
 		assert.match(css, /\.motion-chart-tooltip-note-name\s*\{[^}]*word-break:\s*break-word/s);
 		assert.match(css, /\.motion-chart-has-slider::after/);
 		assert.match(css, /\.motion-chart-has-slider-vertical::after/);
+		assert.match(css, /\.motion-chart-ellipsis-tip\s*\{/s);
 		assert.match(css, /pointer-events:\s*none/);
 		assert.match(css, /color-mix\(in srgb, var\(--text-muted, #888\) 18%, transparent\)/);
 		assert.equal(css.includes('42%'), false);
