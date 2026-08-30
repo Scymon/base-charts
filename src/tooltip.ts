@@ -1,10 +1,6 @@
-import { resolveEllipsisRange, skippedLabels } from './axisLabels.ts';
 import { notesByName, notesForCategory, notesForSeries, resolveClickNotes } from './click.ts';
 import { formatAxisTick } from './format.ts';
 import type { AggregatedChart, CategoryNote, ChartSettings, ClickPayload, ScatterPoint } from './types.ts';
-
-/** Max named rows in an ellipsis hover card before first/last + count. */
-export const SKIPPED_LABEL_TOOLTIP_CAP = 16;
 
 /** Charts whose marks are often one note (or 1:1). Grouped types stay on the bucket card. */
 const POINT_CHART_TYPES = new Set<ChartSettings['chartType']>([
@@ -412,48 +408,11 @@ function formatGroupTooltip(
 	return wrapTooltip(parts.filter(Boolean).join(''));
 }
 
-export function capSkippedLabels(
-	labels: string[],
-	cap = SKIPPED_LABEL_TOOLTIP_CAP,
-): { rows: string[]; hidden: number } {
-	if (labels.length <= cap) return { rows: labels, hidden: 0 };
-	const head = Math.max(1, Math.ceil((cap - 1) / 2));
-	const tail = Math.max(1, cap - 1 - head);
-	return {
-		rows: [...labels.slice(0, head), '…', ...labels.slice(labels.length - tail)],
-		hidden: labels.length - head - tail,
-	};
-}
-
-/** Hover card for a collapsed `...` run: category labels, existing tooltip chrome. */
-export function formatSkippedLabelsTooltip(
-	labels: string[],
-	settings: ChartSettings,
-	propertyId: string | null | undefined = settings.xProperty,
-): string {
-	const axisName = propertyLabel(propertyId);
-	const title = axisName || labels[0] || '…';
-	const { rows } = capSkippedLabels(labels);
-	const list = rows
-		.map((label) => {
-			const name = escapeHtml(label);
-			return `<div class="motion-chart-tooltip-note"><span class="motion-chart-tooltip-note-name">${name}</span></div>`;
-		})
-		.join('');
-	const parts = [titleLine(title), statLine(`n ${labels.length}`)];
-	if (list) parts.push(`<div class="motion-chart-tooltip-notes">${list}</div>`);
-	return wrapTooltip(parts.join(''));
-}
-
 export function formatCategoryTooltip(
 	params: unknown,
 	data: AggregatedChart,
 	settings: ChartSettings,
 ): string {
-	const skipped = resolveEllipsisRange(params);
-	if (skipped) {
-		return formatSkippedLabelsTooltip(skippedLabels(data.categories, skipped.start, skipped.end), settings);
-	}
 	const category = categoryFromParams(params);
 	const seriesName = seriesFromParams(params, data, settings);
 	const notes = notesForTooltip(data, params, settings);
