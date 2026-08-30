@@ -7,13 +7,18 @@ import { aggregateRows } from './aggregate.ts';
 import {
 	buildChartOption,
 	categoryWindowHint,
+	chartCoordFamily,
+	CHART_OPTION_REPLACE_MERGE,
 	hasDateCategories,
 	icicleLabelVisible,
 	logSafeValue,
 	marimekkoWidths,
+	shouldApplyLogY,
+	shouldResetChart,
 	sturgesBinCount,
 	treemapLabelFormatter,
 	treemapLabelLayout,
+	usesCartesianGrid,
 } from './chart.ts';
 import { pickOpenNote, resolveClickNotes, shouldOpenNotesOnClick } from './click.ts';
 import { CHART_TYPES, DEFAULT_EXCLUDED_TAGS, type ChartSettings, type ChartTheme, type RawRow } from './types.ts';
@@ -196,7 +201,9 @@ describe('buildChartOption', () => {
 			settings({ logY: true }),
 		);
 		assert.equal(logSafeValue(0, true), null);
+		assert.equal(logSafeValue(-4, true), null);
 		assert.equal(logSafeValue(10000, true), 10000);
+		assert.equal(shouldApplyLogY(settings({ logY: true }), withZero), true);
 		const option = buildChartOption(withZero, settings({ logY: true }), theme, false);
 		const yAxis = option.yAxis as { type?: string };
 		assert.equal(yAxis.type, 'log');
@@ -204,6 +211,92 @@ describe('buildChartOption', () => {
 		const zeroPoint = seriesData.find((item) => item.name === 'alpha');
 		assert.equal(zeroPoint?.value, null);
 		assert.equal(zeroPoint?.raw, 0);
+		const highPoint = seriesData.find((item) => item.name === 'beta');
+		assert.equal(highPoint?.value, 10000);
+	});
+
+	it('does not apply log Y when every value is non-positive, so bars still have heights', () => {
+		const allNonPositive = aggregateRows(
+			[
+				{ xLabels: ['alpha'], seriesLabels: [], y: 0, xNumeric: null, fileName: 'zero' },
+				{ xLabels: ['beta'], seriesLabels: [], y: -3, xNumeric: null, fileName: 'neg' },
+			],
+			settings({ logY: true }),
+		);
+		assert.equal(shouldApplyLogY(settings({ logY: true }), allNonPositive), false);
+		const option = buildChartOption(allNonPositive, settings({ logY: true }), theme, false);
+		const yAxis = option.yAxis as { type?: string };
+		assert.equal(yAxis.type, 'value');
+		const seriesData = (option.series as { data: { value: number | null }[] }[])[0]?.data ?? [];
+		assert.ok(seriesData.length > 0);
+		assert.ok(seriesData.every((item) => item.value != null));
+	});
+
+	it('omits a dummy Value series from heatmap and sunburst when some series-by labels are empty', () => {
+		const mixed = aggregateRows(
+			[
+				{ xLabels: ['alpha'], seriesLabels: ['east'], y: 10, xNumeric: null, fileName: 'a' },
+				{ xLabels: ['beta'], seriesLabels: [], y: 20, xNumeric: null, fileName: 'b' },
+				{ xLabels: ['alpha'], seriesLabels: ['west'], y: 30, xNumeric: null, fileName: 'c' },
+			],
+			settings({ seriesProperty: 'note.group', aggregation: 'sum' }),
+		);
+		assert.deepEqual([...mixed.seriesNames].sort(), ['east', 'west']);
+		assert.equal(mixed.seriesNames.includes('Value'), false);
+
+		const heat = buildChartOption(mixed, settings({ chartType: 'heatmap' }), theme, false);
+		const heatY = (heat.yAxis as { data?: string[] }).data ?? [];
+		assert.deepEqual([...heatY].sort(), ['east', 'west']);
+		assert.equal(heatY.includes('Value'), false);
+
+		const sun = buildChartOption(mixed, settings({ chartType: 'sunburst' }), theme, false);
+		const nodes = (sun.series as { data?: { name?: string; children?: { name?: string }[] }[] }[])[0]?.data ?? [];
+		const names = nodes.flatMap((node) => [node.name, ...(node.children?.map((child) => child.name) ?? [])]);
+		assert.equal(names.includes('Value'), false);
+		assert.ok(names.includes('east'));
+		assert.ok(names.includes('west'));
+	});
+
+	it('does not name the lone heatmap row or sunburst ring Value when series-by is unset', () => {
+		const heat = buildChartOption(data, settings({ chartType: 'heatmap' }), theme, false);
+		const heatY = (heat.yAxis as { data?: string[] }).data ?? [];
+		assert.equal(heatY.includes('Value'), false);
+		assert.equal(heatY.length, 1);
+
+		const sun = buildChartOption(data, settings({ chartType: 'sunburst' }), theme, false);
+		const nodes = (sun.series as { data?: { name?: string }[] }[])[0]?.data ?? [];
+		assert.equal(nodes.some((node) => node.name === 'Value'), false);
+		assert.ok(nodes.some((node) => node.name === 'alpha'));
+	});
+
+	it('still charts a real x-axis category named value', () => {
+		const tagged = aggregateRows(
+			[
+				{ xLabels: ['value'], seriesLabels: [], y: 12, xNumeric: null, fileName: 'one' },
+				{ xLabels: ['topic'], seriesLabels: [], y: 8, xNumeric: null, fileName: 'two' },
+			],
+			settings({ aggregation: 'sum' }),
+		);
+		assert.ok(tagged.categories.includes('value'));
+		const heat = buildChartOption(tagged, settings({ chartType: 'heatmap' }), theme, false);
+		const heatX = (heat.xAxis as { data?: string[] }).data ?? [];
+		assert.ok(heatX.includes('value'));
+		assert.equal(((heat.yAxis as { data?: string[] }).data ?? []).includes('Value'), false);
+		const sun = buildChartOption(tagged, settings({ chartType: 'sunburst' }), theme, false);
+		const nodes = (sun.series as { data?: { name?: string }[] }[])[0]?.data ?? [];
+		assert.ok(nodes.some((node) => node.name === 'value'));
+		assert.equal(nodes.some((node) => node.name === 'Value'), false);
+	});
+
+	it('always includes grid on cartesian bar-family charts', () => {
+		const types = ['bar', 'bar-horizontal', 'bar-stacked', 'bar-percent', 'combo', 'lollipop'] as const;
+		for (const chartType of types) {
+			assert.equal(usesCartesianGrid(chartType), true, chartType);
+			const option = buildChartOption(data, settings({ chartType }), theme, false);
+			assert.ok(option.grid, `${chartType} should include grid`);
+			assert.equal(typeof option.grid, 'object');
+		}
+		assert.ok(CHART_OPTION_REPLACE_MERGE.includes('grid'));
 	});
 
 	it('builds combo with a Y2 line and a second axis', () => {
@@ -628,6 +721,29 @@ describe('buildChartOption', () => {
 		const still = buildChartOption(dated, settings({ chartType: 'bar-race' }), theme, true);
 		assert.equal(still.animation, false);
 		assert.equal((still.timeline as { autoPlay?: boolean }).autoPlay, false);
+	});
+
+	it('resets the echarts instance when the coordinate family changes', () => {
+		assert.equal(shouldResetChart(null, 'bar'), false);
+		assert.equal(shouldResetChart('bar', 'bar'), false);
+		assert.equal(shouldResetChart('bar', 'bar-horizontal'), false);
+		assert.equal(shouldResetChart('bar', 'bar-stacked'), false);
+		assert.equal(shouldResetChart('bar', 'bar-percent'), false);
+		assert.equal(shouldResetChart('bar', 'combo'), false);
+		assert.equal(shouldResetChart('bar', 'lollipop'), false);
+		assert.equal(shouldResetChart('bar', 'line'), false);
+		assert.equal(shouldResetChart('pie', 'doughnut'), false);
+		assert.equal(shouldResetChart('pie', 'bar'), true);
+		assert.equal(shouldResetChart('rose', 'bar-horizontal'), true);
+		assert.equal(shouldResetChart('sankey', 'bar'), true);
+		assert.equal(shouldResetChart('treemap', 'bar-stacked'), true);
+		assert.equal(shouldResetChart('calendar', 'combo'), true);
+		assert.equal(shouldResetChart('bar-polar', 'bar'), true);
+		assert.equal(shouldResetChart('streamgraph', 'lollipop'), true);
+		assert.equal(shouldResetChart('radar', 'bar'), true);
+		assert.equal(chartCoordFamily('waffle'), 'cartesian');
+		assert.equal(chartCoordFamily('icicle'), 'cartesian');
+		assert.equal(shouldResetChart('waffle', 'bar'), false);
 	});
 
 	it('still disables animation on leftover types when reduced motion is on', () => {

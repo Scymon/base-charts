@@ -86,6 +86,45 @@ export function supportsLogY(chartType: ChartSettings['chartType']): boolean {
 	return LOG_Y_TYPES.has(chartType);
 }
 
+/** Coordinate-system family. Same-family switches keep merge + universalTransition. */
+export function chartCoordFamily(chartType: ChartSettings['chartType']): string {
+	if (usesCartesianGrid(chartType) || chartType === 'waffle' || chartType === 'icicle') return 'cartesian';
+	if (chartType === 'bar-polar') return 'polar';
+	if (chartType === 'pie' || chartType === 'doughnut' || chartType === 'rose') return 'pie';
+	if (chartType === 'bubbles' || chartType === 'chord' || chartType === 'network') return 'graph';
+	if (chartType === 'streamgraph') return 'streamgraph';
+	return chartType;
+}
+
+/** True when leftover option (polar/calendar/sankey/treemap/…) can suppress the next chart. */
+export function shouldResetChart(
+	prevType: ChartSettings['chartType'] | null,
+	nextType: ChartSettings['chartType'],
+): boolean {
+	if (prevType == null || prevType === nextType) return false;
+	return chartCoordFamily(prevType) !== chartCoordFamily(nextType);
+}
+
+export const CHART_OPTION_REPLACE_MERGE = [
+	'series',
+	'xAxis',
+	'yAxis',
+	'grid',
+	'radar',
+	'calendar',
+	'visualMap',
+	'dataZoom',
+	'polar',
+	'angleAxis',
+	'radiusAxis',
+	'singleAxis',
+	'timeline',
+	'parallel',
+	'parallelAxis',
+	'title',
+	'options',
+] as const;
+
 export function logSafeValue(value: number, logY: boolean): number | null {
 	if (!logY) return value;
 	return value > 0 && Number.isFinite(value) ? value : null;
