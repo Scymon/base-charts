@@ -76,7 +76,7 @@ Junk list labels (`viral`, `viral-video`, and similar) stay excluded by default;
 | Filter empty Y values | On by default |
 | Sort | **Time (old → new / new → old)** when X looks like dates or ISO weeks (`2026-W32`, `2026-W9`, `2026-08`, `2026-08-30`, unpadded `2026-8-3`). Time sort uses calendar timestamps, not string order. A `YYYY-M-D` triple with month &gt; 12 is not a date. **Value** (high/low) for tag bars. **Label** A–Z / Z–A. Time-like X defaults to Time old → new, not value |
 | Max categories | Caps busy **tag** charts by the current sort. On a time axis it is only a zoom-window hint: every populated period stays on the axis, missing weeks/months/days fill as 0 on the real label, and a bottom dataZoom slider (mini-graph + pill handles) windows the plot |
-| Min notes per category | Optional. Default **1** keeps every X category. Raise it to drop categories whose distinct note count is below the threshold (one note with the same label twice still counts as 1). Applied before max categories. Time axes skip this so a one-note week or day stays on the calendar |
+| Min n | Optional. Default **1** shows every category. Higher drops groups with fewer notes (distinct note count; one note with the same label twice still counts as 1). Applied before max categories. Time axes skip this so a one-note week or day stays on the calendar |
 | Exclude tags | Applied when the X-axis or series is a list |
 | Log Y | Display toggle. Logarithmic scale on cartesian value axes; zeros/negatives are skipped so the chart does not crash |
 | Legend / data labels / grid | Display toggles |
