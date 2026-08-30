@@ -148,9 +148,7 @@ export class MotionChartView extends BasesView {
 		this.chartEl.show();
 		const theme = readChartTheme(this.rootEl);
 		const option = buildChartOption(aggregated, settings, theme, prefersReducedMotion());
-		this.ensureChart().setOption(option, {
-			replaceMerge: ['series', 'xAxis', 'yAxis', 'radar', 'calendar', 'visualMap'],
-		});
+		this.ensureChart().setOption(option, { replaceMerge: ['series'] });
 		this.chart?.resize();
 	}
 
