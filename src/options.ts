@@ -5,16 +5,24 @@ import { AGGREGATIONS, CHART_TYPES, DEFAULT_EXCLUDED_TAGS, SORT_MODES, type Char
 const CHART_TYPE_LABELS: Record<ChartType, string> = {
 	bar: 'Bar',
 	'bar-horizontal': 'Horizontal bar',
+	'bar-stacked': 'Stacked bar',
 	line: 'Line',
 	area: 'Area',
 	pie: 'Pie',
 	doughnut: 'Doughnut',
+	rose: 'Nightingale',
 	scatter: 'Scatter',
 	heatmap: 'Heatmap',
+	calendar: 'Calendar heatmap',
+	boxplot: 'Boxplot',
+	bubbles: 'Packed bubbles',
 	radar: 'Radar',
 	gauge: 'Gauge',
 	treemap: 'Treemap',
+	sunburst: 'Sunburst',
 	funnel: 'Funnel',
+	waterfall: 'Waterfall',
+	sankey: 'Sankey',
 };
 
 export function viewOptions(config: BasesViewConfig): BasesAllOptions[] {
