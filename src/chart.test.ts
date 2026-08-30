@@ -13,12 +13,13 @@ import {
 	hasDateCategories,
 	initialCategoryWindow,
 	icicleLabelVisible,
-	SLIDER_EDGE,
 	SLIDER_END,
 	SLIDER_HANDLE_ICON,
 	SLIDER_HANDLE_SIZE,
 	SLIDER_HEIGHT,
 	SLIDER_START,
+	SLIDER_WAVEFORM_EDGE,
+	SLIDER_WAVEFORM_HEIGHT,
 	SLIDER_WAVEFORM_ID,
 	sliderWaveformGradient,
 	logSafeValue,
@@ -564,6 +565,7 @@ describe('buildChartOption', () => {
 			emphasis?: { handleStyle?: { color?: string }; moveHandleStyle?: { color?: string } };
 			yAxisIndex?: number;
 			xAxisIndex?: number;
+			seriesIndex?: number[];
 			showDataShadow?: boolean;
 			dataBackground?: unknown;
 			showDetail?: boolean;
@@ -588,6 +590,7 @@ describe('buildChartOption', () => {
 		assert.equal(slider?.showDataShadow, false);
 		assert.equal(slider?.dataBackground, undefined);
 		assert.equal(slider?.xAxisIndex, 0);
+		assert.deepEqual((slider as { seriesIndex?: number[] }).seriesIndex, [0]);
 		assert.equal(slider?.backgroundColor, 'transparent');
 		assert.equal(slider?.fillerColor, colorAlpha(theme.accent, 0.08));
 		assert.equal(slider?.handleStyle?.color, colorAlpha(theme.accent, 0.28));
@@ -610,8 +613,9 @@ describe('buildChartOption', () => {
 		assert.equal(grids[0]?.containLabel, true);
 		const waveGrid = grids.find((item) => item.id === SLIDER_WAVEFORM_ID);
 		assert.ok(waveGrid);
-		assert.equal(waveGrid?.height, SLIDER_HEIGHT);
-		assert.equal(waveGrid?.bottom, SLIDER_EDGE);
+		assert.equal(waveGrid?.height, SLIDER_WAVEFORM_HEIGHT);
+		assert.equal(waveGrid?.bottom, SLIDER_WAVEFORM_EDGE);
+		assert.ok((waveGrid?.height ?? 0) > SLIDER_HEIGHT);
 		assert.equal(waveGrid?.left, SLIDER_START);
 		assert.equal(waveGrid?.right, SLIDER_END);
 		assert.equal(waveGrid?.containLabel, false);
@@ -639,14 +643,15 @@ describe('buildChartOption', () => {
 		assert.equal(wave?.name, undefined);
 		assert.equal(wave?.xAxisIndex, 1);
 		assert.equal(wave?.yAxisIndex, 1);
+		assert.equal((slider as { seriesIndex?: number[] }).seriesIndex?.includes(wave?.xAxisIndex ?? -1), false);
 		assert.equal(wave?.lineStyle?.width, 1);
 		assert.equal(wave?.areaStyle?.color?.type, 'linear');
 		assert.equal(wave?.areaStyle?.color?.y2, 1);
-		assert.deepEqual(wave?.areaStyle?.color, sliderWaveformGradient(theme.accent, 0.12));
+		assert.deepEqual(wave?.areaStyle?.color, sliderWaveformGradient(theme.accent));
 		assert.deepEqual(wave?.data, dense.categories.map((_, index) => dense.values[0]?.[index] ?? 0));
 		const fade = wave?.areaStyle?.color?.colorStops ?? [];
 		assert.equal(fade[0]?.offset, 0);
-		assert.equal(fade[0]?.color, colorAlpha(theme.accent, 0.12));
+		assert.equal(fade[0]?.color, colorAlpha(theme.accent, 0.22));
 		assert.equal(fade[fade.length - 1]?.offset, 1);
 		assert.equal(fade[fade.length - 1]?.color, colorAlpha(theme.accent, 0));
 		assert.equal(JSON.stringify(moving).includes('Score'), false);
@@ -677,8 +682,8 @@ describe('buildChartOption', () => {
 		assert.equal(ySlider?.width, SLIDER_HEIGHT);
 		const sideGrids = sideways.grid as { id?: string; width?: number; right?: number }[];
 		const sideWave = sideGrids.find((item) => item.id === SLIDER_WAVEFORM_ID);
-		assert.equal(sideWave?.width, SLIDER_HEIGHT);
-		assert.equal(sideWave?.right, SLIDER_EDGE);
+		assert.equal(sideWave?.width, SLIDER_WAVEFORM_HEIGHT);
+		assert.equal(sideWave?.right, SLIDER_WAVEFORM_EDGE);
 		const sideSeries = (sideways.series as { id?: string; xAxisIndex?: number; yAxisIndex?: number }[]).find(
 			(item) => item.id === SLIDER_WAVEFORM_ID,
 		);

@@ -82,6 +82,12 @@ export const SLIDER_HEIGHT = 10;
 export const SLIDER_RESERVE = 36;
 /** Bottom (horizontal slider) / right (vertical slider) inset from the canvas edge. */
 export const SLIDER_EDGE = 8;
+/**
+ * Waveform band is taller than the 10px pill so the ridge + fade can read.
+ * Centered on the same midline as the slider chrome.
+ */
+export const SLIDER_WAVEFORM_HEIGHT = 22;
+export const SLIDER_WAVEFORM_EDGE = SLIDER_EDGE - (SLIDER_WAVEFORM_HEIGHT - SLIDER_HEIGHT) / 2;
 /** Left (horizontal) / top (vertical) inset so the track clears axis labels. */
 export const SLIDER_START = 48;
 /** Right (horizontal) / bottom (vertical) inset. */
@@ -317,7 +323,7 @@ export function colorAlpha(color: string, alpha: number): string {
 }
 
 /** Soft ridge → baseline fade for the extra-grid waveform. Slider dataBackground cannot do this. */
-export function sliderWaveformGradient(color: string, topAlpha = 0.12) {
+export function sliderWaveformGradient(color: string, topAlpha = 0.22) {
 	return {
 		type: 'linear' as const,
 		x: 0,
@@ -331,7 +337,7 @@ export function sliderWaveformGradient(color: string, topAlpha = 0.12) {
 	};
 }
 
-function sliderWaveformSideGradient(color: string, topAlpha = 0.12) {
+function sliderWaveformSideGradient(color: string, topAlpha = 0.22) {
 	return {
 		type: 'linear' as const,
 		x: 1,
@@ -368,9 +374,14 @@ function attachSliderWaveform<T extends EChartsOption>(
 	const xAxes = asOptionList(option.xAxis as object | object[] | undefined);
 	const yAxes = asOptionList(option.yAxis as object | object[] | undefined);
 	const series = asOptionList(option.series as object | object[] | undefined);
+	const zooms = asOptionList(option.dataZoom as object | object[] | undefined);
 	const gridIndex = grids.length;
 	const xAxisIndex = xAxes.length;
 	const yAxisIndex = yAxes.length;
+	const seriesIndex = series.map((_, index) => index);
+	const scopedZooms = zooms.map((zoom) =>
+		zoom && typeof zoom === 'object' ? { ...zoom, seriesIndex } : zoom,
+	);
 	const totals = categoryTotals(data);
 	const accent = theme.accent;
 	const hiddenAxis = {
@@ -385,16 +396,16 @@ function attachSliderWaveform<T extends EChartsOption>(
 				id: SLIDER_WAVEFORM_ID,
 				top: SLIDER_START,
 				bottom: SLIDER_END,
-				right: SLIDER_EDGE,
-				width: SLIDER_HEIGHT,
+				right: SLIDER_WAVEFORM_EDGE,
+				width: SLIDER_WAVEFORM_HEIGHT,
 				containLabel: false,
 			}
 		: {
 				id: SLIDER_WAVEFORM_ID,
 				left: SLIDER_START,
 				right: SLIDER_END,
-				bottom: SLIDER_EDGE,
-				height: SLIDER_HEIGHT,
+				bottom: SLIDER_WAVEFORM_EDGE,
+				height: SLIDER_WAVEFORM_HEIGHT,
 				containLabel: false,
 			};
 	const categoryAxis = {
@@ -421,12 +432,13 @@ function attachSliderWaveform<T extends EChartsOption>(
 		silent: true,
 		legendHoverLink: false,
 		animation: false,
-		z: 0,
+		clip: false,
+		z: 1,
 		tooltip: { show: false },
 		emphasis: { disabled: true },
 		lineStyle: {
 			width: 1,
-			color: colorAlpha(accent, 0.4),
+			color: colorAlpha(accent, 0.85),
 		},
 		areaStyle: {
 			color: horizontal ? sliderWaveformSideGradient(accent) : sliderWaveformGradient(accent),
@@ -434,6 +446,7 @@ function attachSliderWaveform<T extends EChartsOption>(
 	};
 	return {
 		...option,
+		dataZoom: scopedZooms.length ? scopedZooms : option.dataZoom,
 		grid: [...grids, grid],
 		xAxis: [...xAxes, horizontal ? valueAxis : categoryAxis],
 		yAxis: [...yAxes, horizontal ? categoryAxis : valueAxis],
