@@ -47,9 +47,11 @@ export function visibleIndexRange(
 	const startValue = Number(zoom.startValue);
 	const endValue = Number(zoom.endValue);
 	if (Number.isFinite(startValue) && Number.isFinite(endValue)) {
-		const startIndex = clampIndex(Math.floor(Math.min(startValue, endValue)), total);
-		const endIndex = clampIndex(Math.ceil(Math.max(startValue, endValue)), total);
-		return { startIndex, endIndex };
+		const startIndex = clampIndex(Math.round(startValue), total);
+		const endIndex = clampIndex(Math.round(endValue), total);
+		return startIndex <= endIndex
+			? { startIndex, endIndex }
+			: { startIndex: endIndex, endIndex: startIndex };
 	}
 
 	const startPct = Number(zoom.start ?? 0);
@@ -82,46 +84,8 @@ export function labelAxisSpan(
 }
 
 /**
- * Evenly spaced indices from `lo` to `hi` inclusive. Always keeps the ends.
- * Used so category ticks skip on a regular cadence instead of greedy packing.
- */
-export function evenCategoryIndices(lo: number, hi: number, count: number): number[] {
-	if (hi <= lo) return [lo];
-	const span = hi - lo + 1;
-	const n = Math.max(2, Math.min(span, Math.floor(count)));
-	if (n >= span) return Array.from({ length: span }, (_, index) => lo + index);
-
-	const shown: number[] = [];
-	for (let step = 0; step < n; step += 1) {
-		const index = lo + Math.round((step * (hi - lo)) / (n - 1));
-		if (shown.at(-1) !== index) shown.push(index);
-	}
-	if (shown[0] !== lo) shown.unshift(lo);
-	if (shown.at(-1) !== hi) shown.push(hi);
-	return shown;
-}
-
-/** One `...` gap for every collapsed run between consecutive shown labels. */
-export function gapsBetweenShown(shown: number[]): AxisLabelGap[] {
-	const gaps: AxisLabelGap[] = [];
-	for (let i = 0; i < shown.length - 1; i += 1) {
-		const left = shown[i];
-		const right = shown[i + 1];
-		if (left == null || right == null || right - left <= 1) continue;
-		const start = left + 1;
-		const end = right - 1;
-		gaps.push({
-			start,
-			end,
-			index: Math.floor((start + end) / 2),
-		});
-	}
-	return gaps;
-}
-
-/**
- * Keep first and last labels of the visible window, plus a regular cadence of
- * intermediates that still fit. Each collapsed run becomes one gap (`...`).
+ * Keep first and last labels of the visible window, plus intermediates that
+ * still fit. Each collapsed run becomes one gap (a later `...` tick).
  */
 export function planCategoryAxisTicks(
 	categories: string[],
@@ -145,16 +109,38 @@ export function planCategoryAxisTicks(
 		labelAxisSpan(categories[index] ?? '', placement, rotate, fontSize, glyphWidth);
 	const count = hi - lo + 1;
 	const length = Number.isFinite(axisLengthPx) && axisLengthPx > 0 ? axisLengthPx : DEFAULT_AXIS_LENGTH;
+	const pos = (index: number) => ((index - lo) / Math.max(1, count - 1)) * length;
 
-	let pitch = 0;
-	for (let index = lo; index <= hi; index += 1) {
-		pitch = Math.max(pitch, spanOf(index));
+	const shown: number[] = [lo];
+	let last = lo;
+	const lastLeft = pos(hi) - spanOf(hi) / 2;
+	const gapPad = 6;
+
+	for (let index = lo + 1; index < hi; index += 1) {
+		const x = pos(index);
+		const half = spanOf(index) / 2;
+		const prevRight = pos(last) + spanOf(last) / 2;
+		if (x - half >= prevRight + gapPad && x + half + gapPad <= lastLeft) {
+			shown.push(index);
+			last = index;
+		}
 	}
-	pitch += 6;
+	shown.push(hi);
 
-	const maxLabels = Math.max(2, Math.min(count, Math.floor(length / pitch) + 1));
-	const shown = evenCategoryIndices(lo, hi, maxLabels);
-	return { shown, gaps: gapsBetweenShown(shown) };
+	const gaps: AxisLabelGap[] = [];
+	for (let i = 0; i < shown.length - 1; i += 1) {
+		const left = shown[i] ?? lo;
+		const right = shown[i + 1] ?? hi;
+		if (right - left <= 1) continue;
+		const skipStart = left + 1;
+		const skipEnd = right - 1;
+		gaps.push({
+			start: skipStart,
+			end: skipEnd,
+			index: Math.floor((skipStart + skipEnd) / 2),
+		});
+	}
+	return { shown, gaps };
 }
 
 export function axisLabelShowsIndex(plan: AxisLabelPlan, index: number): boolean {
@@ -218,17 +204,16 @@ export function resolveEllipsisRange(payload: unknown): { start: number; end: nu
 	return { start, end };
 }
 
-/** Axis-pixel offset for a gap’s `...`, in the visual middle of the skipped run. */
+/** Grid-pixel offset for a gap’s `...` when `convertToPixel` misses. */
 export function ellipsisAxisOffset(
-	gap: AxisLabelGap,
+	index: number,
 	startIndex: number,
 	endIndex: number,
 	axisLengthPx: number,
 ): number {
 	const length = Number.isFinite(axisLengthPx) && axisLengthPx > 0 ? axisLengthPx : DEFAULT_AXIS_LENGTH;
 	const span = Math.max(1, endIndex - startIndex);
-	const mid = (gap.start + gap.end) / 2;
-	const t = (mid - startIndex) / span;
+	const t = (index - startIndex) / span;
 	return Math.max(0, Math.min(length, t * length));
 }
 
