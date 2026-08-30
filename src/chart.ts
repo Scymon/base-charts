@@ -644,11 +644,12 @@ export function buildChartOption(
 	}
 
 	if (settings.chartType === 'streamgraph') {
+		const origin = Date.UTC(2024, 0, 1);
 		const river: [string, number, string][] = data.seriesNames.flatMap((series, seriesIndex) =>
 			data.categories.map(
-				(category, index): [string, number, string] => [
-					category,
-					data.values[seriesIndex]?.[index] ?? 0,
+				(_category, index): [string, number, string] => [
+					new Date(origin + index * 86_400_000).toISOString().slice(0, 10),
+					Math.max(0, data.values[seriesIndex]?.[index] ?? 0),
 					series,
 				],
 			),
@@ -657,16 +658,21 @@ export function buildChartOption(
 			...anim,
 			backgroundColor: theme.background,
 			color: colors,
-			legend,
+			legend: { ...legend, data: data.seriesNames },
 			tooltip: categoryTooltip(theme, data, settings, 'item'),
 			singleAxis: {
-				type: 'category',
-				data: data.categories,
+				type: 'time',
 				top: 48,
 				bottom: categoryAxisPad(data.categories, 'bottom').bottom,
 				left: 24,
 				right: 24,
-				axisLabel: categoryAxisLabel(theme, 'bottom'),
+				axisLabel: {
+					...categoryAxisLabel(theme, 'bottom'),
+					formatter: (value: string | number) => {
+						const index = Math.round((new Date(value).getTime() - origin) / 86_400_000);
+						return data.categories[index] ?? '';
+					},
+				},
 				axisLine: { lineStyle: { color: theme.border } },
 				axisTick: { lineStyle: { color: theme.border } },
 			},
