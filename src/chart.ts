@@ -1858,42 +1858,40 @@ function violinOption(
 	const maxCount = Math.max(1, ...groups.flatMap((group) => group.bins.map((bin) => bin.count)));
 	const yMin = domain?.min ?? 0;
 	const yMax = domain?.max ?? 1;
+	const binHeight = yMax === yMin ? 1 : (yMax - yMin) / Math.max(1, binCount);
 	const series: SeriesOption[] = groups.map((group, index) => ({
 		name: group.name,
 		type: 'custom',
 		coordinateSystem: 'cartesian2d',
-		data: [
-			{
+		data: group.bins
+			.filter((bin) => bin.count > 0)
+			.map((bin) => ({
 				name: group.name,
-				value: [index, yMin, yMax],
-				bins: group.bins,
-			},
-		],
-		encode: { x: 0, y: [1, 2] },
+				value: [index, bin.mid, bin.count, maxCount, binHeight],
+			})),
+		encode: { x: 0, y: 1 },
 		renderItem: (_params, api) => {
 			const categoryIndex = Number(api.value(0));
-			const half = 0.42;
-			const points: number[][] = [];
-			for (const bin of group.bins) {
-				const width = ((bin.count / maxCount) * half) || 0;
-				const coord = api.coord([categoryIndex + width, bin.mid]);
-				points.push([coord[0] ?? 0, coord[1] ?? 0]);
-			}
-			for (let i = group.bins.length - 1; i >= 0; i -= 1) {
-				const bin = group.bins[i];
-				if (!bin) continue;
-				const width = ((bin.count / maxCount) * half) || 0;
-				const coord = api.coord([categoryIndex - width, bin.mid]);
-				points.push([coord[0] ?? 0, coord[1] ?? 0]);
-			}
+			const mid = Number(api.value(1));
+			const count = Number(api.value(2));
+			const peak = Number(api.value(3)) || 1;
+			const height = Number(api.value(4)) || 1;
+			const half = (count / peak) * 0.42;
+			const start = api.coord([categoryIndex - half, mid - height / 2]);
+			const end = api.coord([categoryIndex + half, mid + height / 2]);
 			return {
-				type: 'polygon',
-				shape: { points },
+				type: 'rect',
+				shape: {
+					x: Math.min(start[0] ?? 0, end[0] ?? 0),
+					y: Math.min(start[1] ?? 0, end[1] ?? 0),
+					width: Math.abs((end[0] ?? 0) - (start[0] ?? 0)),
+					height: Math.abs((end[1] ?? 0) - (start[1] ?? 0)),
+				},
 				style: {
-					fill: api.visual('color') as string,
-					opacity: 0.55,
+					fill: api.visual('color'),
+					opacity: 0.72,
 					stroke: theme.background,
-					lineWidth: 1,
+					lineWidth: 0.5,
 				},
 			};
 		},
@@ -1907,10 +1905,19 @@ function violinOption(
 		tooltip: categoryTooltip(theme, data, settings, 'item'),
 		grid: cartesianGrid(false, data.categories),
 		xAxis: {
-			type: 'category',
-			data: data.categories,
+			type: 'value',
+			min: -0.5,
+			max: Math.max(0.5, data.categories.length - 0.5),
+			interval: 1,
 			...axisCommon(theme, settings.showGrid),
-			axisLabel: categoryAxisLabel(theme, 'bottom'),
+			axisLabel: {
+				...categoryAxisLabel(theme, 'bottom'),
+				formatter: (value: number) => {
+					const index = Math.round(Number(value));
+					if (Math.abs(Number(value) - index) > 1e-6) return '';
+					return data.categories[index] ?? '';
+				},
+			},
 		},
 		yAxis: valueAxisOption(theme, settings.showGrid, logY, { min: yMin, max: yMax }),
 		series,

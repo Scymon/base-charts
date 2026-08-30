@@ -594,11 +594,14 @@ describe('buildChartOption', () => {
 			theme,
 			false,
 		);
-		const violinSeries = (violin.series as { type?: string; data?: { bins?: { mid: number; count: number }[] }[] }[])[0];
+		const violinSeries = (violin.series as { type?: string; data?: { value?: number[] }[] }[])[0];
 		assert.equal(violinSeries?.type, 'custom');
-		const bins = violinSeries?.data?.[0]?.bins ?? [];
-		assert.ok(bins.some((bin) => bin.mid > 250 && bin.count > 0));
-		assert.ok(bins.reduce((sum, bin) => sum + bin.count, 0) === 4);
+		const points = violinSeries?.data ?? [];
+		assert.ok(points.some((item) => Number(item.value?.[1]) > 250 && Number(item.value?.[2]) > 0));
+		assert.equal(
+			points.reduce((sum, item) => sum + Number(item.value?.[2] ?? 0), 0),
+			4,
+		);
 		assert.ok(((violin.yAxis as { max?: number }).max ?? 0) >= 4000);
 	});
 
