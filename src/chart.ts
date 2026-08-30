@@ -78,7 +78,7 @@ const ZOOM_TYPES = new Set<ChartSettings['chartType']>([
 
 export const ZOOM_AFTER = 12;
 export const ZOOM_WINDOW = 16;
-export const SLIDER_HEIGHT = 12;
+export const SLIDER_HEIGHT = 10;
 export const SLIDER_RESERVE = 36;
 /** Bottom (horizontal slider) / right (vertical slider) inset from the canvas edge. */
 export const SLIDER_EDGE = 8;
@@ -429,11 +429,9 @@ function dataZoomOption(
 	const { start, end } = zoomStartEnd(data.categories, settings.sort, windowSize);
 	const axis = horizontal ? { yAxisIndex: 0 } : { xAxisIndex: 0 };
 	const accent = theme.accent;
-	const filler = colorAlpha(accent, 0.1);
-	const handle = colorAlpha(accent, 0.35);
-	const hover = colorAlpha(accent, 0.78);
-	const edgeLine = colorAlpha(theme.text, 0.35);
-	const selectedLine = colorAlpha(theme.text, 0.45);
+	const filler = colorAlpha(accent, 0.08);
+	const handle = colorAlpha(accent, 0.28);
+	const waveLine = colorAlpha(theme.text, 0.28);
 	return {
 		dataZoom: [
 			{
@@ -466,22 +464,25 @@ function dataZoomOption(
 				handleSize: SLIDER_HANDLE_SIZE,
 				handleStyle: {
 					color: handle,
-					borderColor: colorAlpha(theme.text, 0.22),
+					borderColor: colorAlpha(theme.text, 0.14),
 					borderWidth: 1,
 					shadowBlur: 0,
+					opacity: 1,
 				},
 				moveHandleSize: 1,
 				moveHandleStyle: {
-					color: colorAlpha(accent, 0.35),
-					opacity: 0.5,
+					color: handle,
+					opacity: 1,
 				},
 				// ECharts SliderZoomView paints dataBackground as a Polygon
 				// inside a scaleY:-1 group. Linear areaStyle.color is ignored
 				// or flattened to the first stop, so a gradient still ships as
-				// a solid mountain. Keep a 1px ridge line only.
+				// a solid mountain. Keep a 1px ridge line only. Selected-range
+				// chrome stays this same quiet line — do not permanently
+				// brighten selectedDataBackground.
 				dataBackground: {
 					lineStyle: {
-						color: edgeLine,
+						color: waveLine,
 						width: 1,
 					},
 					areaStyle: {
@@ -491,7 +492,7 @@ function dataZoomOption(
 				},
 				selectedDataBackground: {
 					lineStyle: {
-						color: selectedLine,
+						color: waveLine,
 						width: 1,
 					},
 					areaStyle: {
@@ -502,14 +503,14 @@ function dataZoomOption(
 				emphasis: {
 					handleLabel: { show: false },
 					handleStyle: {
-						color: hover,
-						borderColor: colorAlpha(theme.text, 0.4),
-						shadowBlur: 10,
-						shadowColor: colorAlpha(accent, 0.5),
+						color: accent,
+						borderColor: colorAlpha(theme.text, 0.35),
+						shadowBlur: 0,
+						opacity: 1,
 					},
 					moveHandleStyle: {
-						color: hover,
-						opacity: 0.7,
+						color: accent,
+						opacity: 1,
 					},
 				},
 				textStyle: { color: 'transparent', fontSize: 0 },

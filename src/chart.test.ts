@@ -548,7 +548,7 @@ describe('buildChartOption', () => {
 			handleSize?: string | number;
 			fillerColor?: string;
 			handleStyle?: { color?: string };
-			emphasis?: { handleStyle?: { color?: string } };
+			emphasis?: { handleStyle?: { color?: string }; moveHandleStyle?: { color?: string } };
 			yAxisIndex?: number;
 			dataBackground?: {
 				lineStyle?: { width?: number; color?: string };
@@ -579,14 +579,19 @@ describe('buildChartOption', () => {
 		assert.equal(slider?.brushSelect, false);
 		assert.equal(slider?.dataBackground?.lineStyle?.width, 1);
 		assert.equal(slider?.selectedDataBackground?.lineStyle?.width, 1);
-		assert.equal(slider?.dataBackground?.lineStyle?.color, colorAlpha(theme.text, 0.35));
+		assert.equal(slider?.dataBackground?.lineStyle?.color, colorAlpha(theme.text, 0.28));
+		assert.equal(slider?.selectedDataBackground?.lineStyle?.color, slider?.dataBackground?.lineStyle?.color);
 		assert.equal(slider?.dataBackground?.areaStyle?.color, 'transparent');
 		assert.equal(slider?.dataBackground?.areaStyle?.opacity, 0);
 		assert.equal(slider?.selectedDataBackground?.areaStyle?.color, 'transparent');
 		assert.equal(slider?.selectedDataBackground?.areaStyle?.opacity, 0);
-		assert.equal(slider?.fillerColor, colorAlpha(theme.accent, 0.1));
-		assert.equal(slider?.handleStyle?.color, colorAlpha(theme.accent, 0.35));
-		assert.ok((slider?.emphasis?.handleStyle?.color ?? '').includes('0.78'));
+		assert.equal(slider?.fillerColor, colorAlpha(theme.accent, 0.08));
+		assert.equal(slider?.handleStyle?.color, colorAlpha(theme.accent, 0.28));
+		assert.equal(slider?.emphasis?.handleStyle?.color, theme.accent);
+		assert.equal(slider?.emphasis?.moveHandleStyle?.color, theme.accent);
+		assert.equal((slider?.handleStyle?.color ?? '').includes('0.9'), false);
+		assert.equal((slider?.handleStyle?.color ?? '').includes('0.78'), false);
+		assert.notEqual(slider?.handleStyle?.color, theme.accent);
 
 		const sideways = buildChartOption(
 			dense,
