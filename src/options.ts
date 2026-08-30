@@ -1,11 +1,13 @@
 import type { BasesAllOptions, BasesViewConfig } from 'obsidian';
-import { usesCartesianGrid } from './chart.ts';
+import { supportsLogY, usesCartesianGrid } from './chart.ts';
 import { AGGREGATIONS, CHART_TYPES, DEFAULT_EXCLUDED_TAGS, SORT_MODES, type ChartType } from './types.ts';
 
 const CHART_TYPE_LABELS: Record<ChartType, string> = {
 	bar: 'Bar',
 	'bar-horizontal': 'Horizontal bar',
 	'bar-stacked': 'Stacked bar',
+	combo: 'Combo',
+	lollipop: 'Lollipop',
 	line: 'Line',
 	area: 'Area',
 	pie: 'Pie',
@@ -15,6 +17,8 @@ const CHART_TYPE_LABELS: Record<ChartType, string> = {
 	heatmap: 'Heatmap',
 	calendar: 'Calendar heatmap',
 	boxplot: 'Boxplot',
+	dumbbell: 'Dumbbell',
+	ridgeline: 'Ridgeline',
 	bubbles: 'Packed bubbles',
 	radar: 'Radar',
 	gauge: 'Gauge',
@@ -23,11 +27,14 @@ const CHART_TYPE_LABELS: Record<ChartType, string> = {
 	funnel: 'Funnel',
 	waterfall: 'Waterfall',
 	sankey: 'Sankey',
+	chord: 'Chord',
 };
 
 export function viewOptions(config: BasesViewConfig): BasesAllOptions[] {
-	const chartType = (String(config.get('chartType') ?? 'bar') as ChartType);
+	const chartType = String(config.get('chartType') ?? 'bar') as ChartType;
 	const cartesian = usesCartesianGrid(chartType);
+	const combo = chartType === 'combo';
+	const logY = supportsLogY(chartType);
 
 	return [
 		{
@@ -48,6 +55,13 @@ export function viewOptions(config: BasesViewConfig): BasesAllOptions[] {
 			key: 'yAxis',
 			displayName: 'Y-axis',
 			placeholder: 'Numeric property',
+		},
+		{
+			type: 'property',
+			key: 'y2Axis',
+			displayName: 'Y2-axis',
+			placeholder: 'Second numeric property',
+			shouldHide: () => !combo,
 		},
 		{
 			type: 'dropdown',
@@ -112,6 +126,13 @@ export function viewOptions(config: BasesViewConfig): BasesAllOptions[] {
 					displayName: 'Grid',
 					default: true,
 					shouldHide: () => !cartesian,
+				},
+				{
+					type: 'toggle',
+					key: 'logY',
+					displayName: 'Log Y',
+					default: false,
+					shouldHide: () => !logY,
 				},
 			],
 		},

@@ -4,6 +4,8 @@ export const CHART_TYPES = [
 	'bar',
 	'bar-horizontal',
 	'bar-stacked',
+	'combo',
+	'lollipop',
 	'line',
 	'area',
 	'pie',
@@ -13,6 +15,8 @@ export const CHART_TYPES = [
 	'heatmap',
 	'calendar',
 	'boxplot',
+	'dumbbell',
+	'ridgeline',
 	'bubbles',
 	'radar',
 	'gauge',
@@ -21,6 +25,7 @@ export const CHART_TYPES = [
 	'funnel',
 	'waterfall',
 	'sankey',
+	'chord',
 ] as const;
 
 export type ChartType = (typeof CHART_TYPES)[number];
@@ -43,6 +48,7 @@ export interface ChartSettings {
 	chartType: ChartType;
 	xProperty: string | null;
 	yProperty: string | null;
+	y2Property: string | null;
 	seriesProperty: string | null;
 	aggregation: Aggregation;
 	filterEmptyY: boolean;
@@ -50,6 +56,7 @@ export interface ChartSettings {
 	showLegend: boolean;
 	showLabels: boolean;
 	showGrid: boolean;
+	logY: boolean;
 	excludedTags: string[];
 	maxCategories: number;
 }
@@ -58,8 +65,17 @@ export interface RawRow {
 	xLabels: string[];
 	seriesLabels: string[];
 	y: number | null;
+	y2?: number | null;
 	xNumeric: number | null;
 	fileName: string;
+	filePath?: string;
+	title?: string;
+}
+
+export interface CategoryNote {
+	name: string;
+	path: string;
+	y: number;
 }
 
 export interface ScatterPoint {
@@ -67,6 +83,7 @@ export interface ScatterPoint {
 	y: number;
 	series: string;
 	name: string;
+	path?: string;
 }
 
 export type BoxFive = [number, number, number, number, number];
@@ -81,6 +98,10 @@ export interface AggregatedChart {
 	seriesNames: string[];
 	values: number[][];
 	rawValues: number[][][];
+	y2Values: number[][];
+	y2Category: number[];
+	hasY2: boolean;
+	notes: CategoryNote[][][];
 	points: ScatterPoint[];
 	overall: number | null;
 	calendar: CalendarCell[];
@@ -94,4 +115,15 @@ export interface ChartTheme {
 	border: string;
 	accent: string;
 	colors: string[];
+}
+
+export interface ClickPayload {
+	name?: string;
+	seriesName?: string;
+	dataType?: string;
+	data?: {
+		name?: string;
+		source?: string;
+		target?: string;
+	};
 }

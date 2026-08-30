@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { aggregateRows } from './aggregate.ts';
-import { buildChartOption } from './chart.ts';
-import { DEFAULT_EXCLUDED_TAGS, type ChartSettings, type ChartTheme } from './types.ts';
+import { buildChartOption, logSafeValue } from './chart.ts';
+import { pickOpenNote, resolveClickNotes } from './click.ts';
+import { DEFAULT_EXCLUDED_TAGS, type ChartSettings, type ChartTheme, type RawRow } from './types.ts';
 
 const theme: ChartTheme = {
 	background: 'transparent',
@@ -16,8 +17,9 @@ const theme: ChartTheme = {
 
 const settings = (overrides: Partial<ChartSettings> = {}): ChartSettings => ({
 	chartType: 'bar',
-	xProperty: 'note.Source',
-	yProperty: 'note.Score',
+	xProperty: 'note.topic',
+	yProperty: 'note.amount',
+	y2Property: null,
 	seriesProperty: null,
 	aggregation: 'median',
 	filterEmptyY: true,
@@ -25,18 +27,18 @@ const settings = (overrides: Partial<ChartSettings> = {}): ChartSettings => ({
 	showLegend: true,
 	showLabels: false,
 	showGrid: true,
+	logY: false,
 	excludedTags: DEFAULT_EXCLUDED_TAGS,
 	maxCategories: 30,
 	...overrides,
 });
 
-const data = aggregateRows(
-	[
-		{ xLabels: ['YouTube'], seriesLabels: [], y: 1200, xNumeric: null, fileName: 'a' },
-		{ xLabels: ['TikTok'], seriesLabels: [], y: 4000, xNumeric: null, fileName: 'b' },
-	],
-	settings(),
-);
+const rows: RawRow[] = [
+	{ xLabels: ['alpha'], seriesLabels: [], y: 1200, y2: 0.03, xNumeric: null, fileName: 'north', filePath: 'notes/north.md' },
+	{ xLabels: ['beta'], seriesLabels: [], y: 4000, y2: 0.08, xNumeric: null, fileName: 'south', filePath: 'notes/south.md' },
+];
+
+const data = aggregateRows(rows, settings());
 
 describe('buildChartOption', () => {
 	it('builds a bar series that can grow on first render', () => {
@@ -75,10 +77,10 @@ describe('buildChartOption', () => {
 	it('builds a boxplot from raw per-note Y values, not a median of medians', () => {
 		const raw = aggregateRows(
 			[
-				{ xLabels: ['cooking'], seriesLabels: [], y: 100, xNumeric: null, fileName: 'low' },
-				{ xLabels: ['cooking'], seriesLabels: [], y: 200, xNumeric: null, fileName: 'mid' },
-				{ xLabels: ['cooking'], seriesLabels: [], y: 300, xNumeric: null, fileName: 'high' },
-				{ xLabels: ['cooking'], seriesLabels: [], y: 4000, xNumeric: null, fileName: 'viral' },
+				{ xLabels: ['topic-a'], seriesLabels: [], y: 100, xNumeric: null, fileName: 'low' },
+				{ xLabels: ['topic-a'], seriesLabels: [], y: 200, xNumeric: null, fileName: 'mid' },
+				{ xLabels: ['topic-a'], seriesLabels: [], y: 300, xNumeric: null, fileName: 'high' },
+				{ xLabels: ['topic-a'], seriesLabels: [], y: 4000, xNumeric: null, fileName: 'outlier' },
 			],
 			settings({ chartType: 'boxplot', aggregation: 'median' }),
 		);
@@ -115,27 +117,27 @@ describe('buildChartOption', () => {
 	});
 
 	it('shows every rotated X label on a dense vertical bar chart', () => {
-		const urls = [
-			'https://x.com/jammles9',
-			'https://x.com/alpha',
-			'https://x.com/bravo',
-			'https://x.com/charlie',
-			'https://x.com/delta',
-			'https://x.com/tyleraloevera',
-			'https://x.com/echo',
-			'https://x.com/foxtrot',
-			'https://x.com/golf',
-			'https://x.com/hotel',
-			'https://x.com/JUFUR',
-			'https://x.com/india',
+		const labels = [
+			'source-jammles9',
+			'source-alpha',
+			'source-bravo',
+			'source-charlie',
+			'source-delta',
+			'source-echo-long',
+			'source-echo',
+			'source-foxtrot',
+			'source-golf',
+			'source-hotel',
+			'source-india-long',
+			'source-india',
 		];
 		const dense = aggregateRows(
-			urls.map((url, index) => ({
-				xLabels: [url],
+			labels.map((label, index) => ({
+				xLabels: [label],
 				seriesLabels: [],
 				y: 12000 - index * 700,
 				xNumeric: null,
-				fileName: `short-${index}`,
+				fileName: `note-${index}`,
 			})),
 			settings(),
 		);
@@ -169,5 +171,123 @@ describe('buildChartOption', () => {
 		assert.ok((heatX.axisLabel?.rotate ?? 0) > 0);
 		assert.equal(heatY.axisLabel?.interval, 0);
 		assert.equal(heatY.axisLabel?.hideOverlap, false);
+	});
+
+	it('uses a log Y axis on bar charts and does not crash on zero', () => {
+		const withZero = aggregateRows(
+			[
+				{ xLabels: ['alpha'], seriesLabels: [], y: 0, xNumeric: null, fileName: 'zero', filePath: 'zero.md' },
+				{ xLabels: ['beta'], seriesLabels: [], y: 10000, xNumeric: null, fileName: 'high', filePath: 'high.md' },
+			],
+			settings({ logY: true }),
+		);
+		assert.equal(logSafeValue(0, true), null);
+		assert.equal(logSafeValue(10000, true), 10000);
+		const option = buildChartOption(withZero, settings({ logY: true }), theme, false);
+		const yAxis = option.yAxis as { type?: string };
+		assert.equal(yAxis.type, 'log');
+		const seriesData = (option.series as { data: { name: string; value: number | null; raw?: number }[] }[])[0]?.data ?? [];
+		const zeroPoint = seriesData.find((item) => item.name === 'alpha');
+		assert.equal(zeroPoint?.value, null);
+		assert.equal(zeroPoint?.raw, 0);
+	});
+
+	it('builds combo with a Y2 line and a second axis', () => {
+		const dual = aggregateRows(rows, settings({ chartType: 'combo', y2Property: 'note.rate' }));
+		const option = buildChartOption(dual, settings({ chartType: 'combo', y2Property: 'note.rate' }), theme, false);
+		const series = option.series as { type: string; yAxisIndex?: number; name?: string }[];
+		assert.equal(series[0]?.type, 'bar');
+		assert.equal(series.some((item) => item.type === 'line' && item.yAxisIndex === 1), true);
+		assert.ok(Array.isArray(option.yAxis));
+		assert.equal((option.yAxis as unknown[]).length, 2);
+	});
+
+	it('degrades combo without Y2 to a normal bar', () => {
+		const option = buildChartOption(data, settings({ chartType: 'combo' }), theme, false);
+		const series = option.series as { type: string }[];
+		assert.equal(series.length, 1);
+		assert.equal(series[0]?.type, 'bar');
+		assert.equal(Array.isArray(option.yAxis), false);
+	});
+
+	it('tooltip names the category, count, and example notes', () => {
+		const option = buildChartOption(data, settings(), theme, false);
+		const formatter = (option.tooltip as { formatter?: (params: unknown) => string }).formatter;
+		assert.equal(typeof formatter, 'function');
+		const html = formatter?.({ name: 'beta' }) ?? '';
+		assert.match(html, /beta/);
+		assert.match(html, /n /);
+		assert.match(html, /south/);
+	});
+
+	it('maps a clicked category back to at least one file', () => {
+		const mapped = resolveClickNotes(data, { name: 'beta' });
+		assert.ok(mapped.length >= 1);
+		assert.equal(mapped[0]?.path, 'notes/south.md');
+		assert.equal(pickOpenNote(mapped)?.path, 'notes/south.md');
+	});
+
+	it('builds lollipop, dumbbell, and chord options', () => {
+		const lollipop = buildChartOption(data, settings({ chartType: 'lollipop' }), theme, false);
+		const dumbbell = buildChartOption(data, settings({ chartType: 'dumbbell' }), theme, false);
+		const chord = buildChartOption(
+			aggregateRows(
+				[
+					{ xLabels: ['alpha'], seriesLabels: ['east'], y: 10, xNumeric: null, fileName: 'a' },
+					{ xLabels: ['beta'], seriesLabels: ['west'], y: 20, xNumeric: null, fileName: 'b' },
+				],
+				settings({ chartType: 'chord' }),
+			),
+			settings({ chartType: 'chord' }),
+			theme,
+			false,
+		);
+		const lollipopTypes = (lollipop.series as { type: string }[]).map((item) => item.type);
+		assert.ok(lollipopTypes.includes('bar'));
+		assert.ok(lollipopTypes.includes('scatter'));
+		assert.equal((dumbbell.series as { type: string }[])[0]?.type, 'custom');
+		assert.equal((chord.series as { type: string; layout?: string }[])[0]?.type, 'graph');
+		assert.equal((chord.series as { layout?: string }[])[0]?.layout, 'circular');
+	});
+
+	it('keeps sankey as a sankey series with flow links', () => {
+		const sankey = buildChartOption(
+			aggregateRows(
+				[
+					{ xLabels: ['alpha'], seriesLabels: ['east'], y: 10, xNumeric: null, fileName: 'a' },
+					{ xLabels: ['beta'], seriesLabels: ['west'], y: 20, xNumeric: null, fileName: 'b' },
+				],
+				settings({ chartType: 'sankey' }),
+			),
+			settings({ chartType: 'sankey' }),
+			theme,
+			false,
+		);
+		const series = (sankey.series as { type: string; links?: { source: string; target: string }[] }[])[0];
+		assert.equal(series?.type, 'sankey');
+		assert.ok((series?.links?.length ?? 0) > 0);
+	});
+
+	it('adds dataZoom on dense cartesian charts and skips zoom animation when reduced', () => {
+		const labels = Array.from({ length: 20 }, (_, index) => `topic-${index}`);
+		const dense = aggregateRows(
+			labels.map((label, index) => ({
+				xLabels: [label],
+				seriesLabels: [],
+				y: 1000 + index,
+				xNumeric: null,
+				fileName: `note-${index}`,
+			})),
+			settings({ maxCategories: 40 }),
+		);
+		const moving = buildChartOption(dense, settings({ maxCategories: 40 }), theme, false);
+		const still = buildChartOption(dense, settings({ maxCategories: 40 }), theme, true);
+		const zooms = moving.dataZoom as { type?: string; animation?: boolean }[];
+		assert.ok(Array.isArray(zooms));
+		assert.ok(zooms.some((item) => item.type === 'inside'));
+		assert.ok(zooms.some((item) => item.type === 'slider'));
+		assert.equal(still.animation, false);
+		const stillSlider = (still.dataZoom as { type?: string; animation?: boolean }[]).find((item) => item.type === 'slider');
+		assert.equal(stillSlider?.animation, false);
 	});
 });
