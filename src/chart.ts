@@ -186,14 +186,16 @@ export function categoryWindowHint(visible: number, total: number): string | nul
 	return `${visible} of ${total} categories`;
 }
 
-export function treemapLabelLayout(params: { rect?: { width?: number; height?: number } }) {
+export function treemapLabelLayout(params: { rect?: { width?: number; height?: number }; text?: string }) {
 	const width = params.rect?.width ?? 0;
 	const height = params.rect?.height ?? 0;
-	if (width < 36 || height < TREEMAP_LABEL_MIN_SHOW) {
+	const text = String(params.text ?? '').split('\n')[0] ?? '';
+	const needed = Math.max(36, text.length * 6.4 + 10);
+	if (width < needed || height < TREEMAP_LABEL_MIN_SHOW) {
 		return { fontSize: 0, width: 0, height: 0 };
 	}
 	return {
-		fontSize: height >= 36 && width >= 72 ? 12 : 11,
+		fontSize: height >= 36 && width >= 80 ? 12 : 11,
 		width: Math.max(0, width - 8),
 	};
 }
@@ -441,6 +443,14 @@ export function buildChartOption(
 					right: 4,
 					top: 8,
 					bottom: 28,
+					upperLabel: {
+						show: nestedLevels,
+						height: 20,
+						color: theme.text,
+						formatter: '{b}',
+						overflow: 'truncate',
+						ellipsis: '…',
+					},
 					breadcrumb: {
 						show: true,
 						left: 8,
@@ -462,7 +472,7 @@ export function buildChartOption(
 					levels: [
 						{
 							colorMappingBy: 'value',
-							itemStyle: { borderColor: leafBorder, borderWidth: 2, gapWidth: 2 },
+							itemStyle: { borderColor: leafBorder, borderWidth: 1, gapWidth: 1 },
 							upperLabel: {
 								show: nestedLevels,
 								color: theme.text,
@@ -720,7 +730,7 @@ export function buildChartOption(
 					coordinateSystem: 'cartesian2d',
 					data: cells,
 					encode: { x: 0, y: 1 },
-					renderItem: (_params, api) => {
+					renderItem: (params, api) => {
 						const x = Number(api.value(0));
 						const y = Number(api.value(1));
 						const sized = api.size?.([1, 1]);
@@ -729,6 +739,8 @@ export function buildChartOption(
 						const point = api.coord([x, y]);
 						const width = Math.max(2, Number(size[0] ?? 16) - gap);
 						const height = Math.max(2, Number(size[1] ?? 16) - gap);
+						const cell = cells[params.dataIndex];
+						const fill = cell?.itemStyle.color ?? theme.accent;
 						return {
 							type: 'rect',
 							shape: {
@@ -739,7 +751,7 @@ export function buildChartOption(
 								r: 2,
 							},
 							style: {
-								fill: api.visual('color') as string,
+								fill,
 							},
 						};
 					},
