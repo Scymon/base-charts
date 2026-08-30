@@ -317,14 +317,62 @@ describe('buildChartOption', () => {
 		assert.equal(Array.isArray(option.yAxis), false);
 	});
 
-	it('tooltip names the category, count, and example notes', () => {
+	it('tooltip names the category, count, and every note in the bucket', () => {
 		const option = buildChartOption(data, settings(), theme, false);
-		const formatter = (option.tooltip as { formatter?: (params: unknown) => string }).formatter;
-		assert.equal(typeof formatter, 'function');
-		const html = formatter?.({ name: 'beta' }) ?? '';
+		const tooltip = option.tooltip as {
+			formatter?: (params: unknown) => string;
+			enterable?: boolean;
+			extraCssText?: string;
+		};
+		assert.equal(typeof tooltip.formatter, 'function');
+		assert.equal(tooltip.enterable, true);
+		assert.equal(tooltip.extraCssText?.includes('max-height:40%'), false);
+		const html = tooltip.formatter?.({ name: 'beta' }) ?? '';
+		assert.match(html, /motion-chart-tooltip/);
 		assert.match(html, /beta/);
 		assert.match(html, /n /);
 		assert.match(html, /south/);
+		assert.match(html, /data-motion-note-path="notes\/south.md"/);
+		assert.match(html, /4000/);
+	});
+
+	it('boxplot and scatter hover use the same file-list tooltip, not a dummy Value series', () => {
+		const grouped = aggregateRows(
+			[
+				{ xLabels: ['fatigue'], seriesLabels: [], y: 100, xNumeric: null, fileName: 'low', filePath: 'low.md' },
+				{ xLabels: ['fatigue'], seriesLabels: [], y: 4000, xNumeric: null, fileName: 'high', filePath: 'high.md' },
+			],
+			settings({ chartType: 'boxplot' }),
+		);
+		const box = buildChartOption(grouped, settings({ chartType: 'boxplot' }), theme, false);
+		const boxHtml = (box.tooltip as { formatter?: (params: unknown) => string }).formatter?.({ name: 'fatigue' }) ?? '';
+		assert.match(boxHtml, /low/);
+		assert.match(boxHtml, /high/);
+		assert.match(boxHtml, /n 2/);
+		assert.equal(boxHtml.includes('Value'), false);
+
+		const scatter = buildChartOption(
+			aggregateRows(
+				[
+					{ xLabels: ['a'], seriesLabels: [], y: 42, xNumeric: 3, fileName: 'north', filePath: 'north.md' },
+					{ xLabels: ['b'], seriesLabels: [], y: 7, xNumeric: 9, fileName: 'south', filePath: 'south.md' },
+				],
+				settings({ chartType: 'scatter' }),
+			),
+			settings({ chartType: 'scatter', xProperty: 'note.day', yProperty: 'note.amount' }),
+			theme,
+			false,
+		);
+		const scatterHtml =
+			(scatter.tooltip as { formatter?: (params: unknown) => string }).formatter?.({
+				name: 'north',
+				value: [3, 42],
+				data: { name: 'north', path: 'north.md' },
+			}) ?? '';
+		assert.match(scatterHtml, /north/);
+		assert.match(scatterHtml, /amount 42/);
+		assert.equal(scatterHtml.includes('south'), false);
+		assert.equal(scatterHtml.includes('Value'), false);
 	});
 
 	it('maps a clicked category back to at least one file', () => {
@@ -765,5 +813,7 @@ describe('chart chrome css', () => {
 		assert.match(css, /\.motion-chart-canvas\s*\{[^}]*height:\s*100%/s);
 		assert.match(css, /\.motion-chart-view\s*\{[^}]*box-sizing:\s*border-box/s);
 		assert.match(css, /\.motion-chart-canvas\s*\{[^}]*box-sizing:\s*border-box/s);
+		assert.match(css, /\.motion-chart-tooltip-notes\s*\{[^}]*max-height:\s*280px/s);
+		assert.match(css, /\.motion-chart-tooltip-note-name\s*\{[^}]*word-break:\s*break-word/s);
 	});
 });
