@@ -211,12 +211,19 @@ function axisCommon(theme: ChartTheme, showGrid: boolean) {
 	};
 }
 
-/** Show every category name. interval:'auto' / hideOverlap skips labels on dense category charts. */
-function categoryAxisLabel(theme: ChartTheme, placement: 'bottom' | 'left') {
+/**
+ * Crowded category axes (week ticks, long tag lists) hide colliding labels
+ * instead of stacking a 45° pile. `interval: 'auto'` plus `hideOverlap`
+ * skip overlaps; `showMinLabel` / `showMaxLabel` keep the ends. Not an
+ * endpoints-only axis — intermediate ticks that fit stay visible.
+ */
+export function categoryAxisLabel(theme: ChartTheme, placement: 'bottom' | 'left') {
 	return {
 		color: theme.muted,
-		interval: 0,
-		hideOverlap: false,
+		interval: 'auto' as const,
+		hideOverlap: true,
+		showMinLabel: true,
+		showMaxLabel: true,
 		rotate: placement === 'bottom' ? 45 : 0,
 	};
 }

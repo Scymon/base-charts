@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { aggregateRows } from './aggregate.ts';
 import {
 	buildChartOption,
+	categoryAxisLabel,
 	categoryWindowHint,
 	chartCoordFamily,
 	CHART_OPTION_REPLACE_MERGE,
@@ -126,12 +127,25 @@ describe('buildChartOption', () => {
 		assert.equal((rose.series as { roseType?: string }[])[0]?.roseType, 'area');
 	});
 
-	it('shows every rotated X label on cartesian charts', () => {
+	it('rotates bottom X labels and hides overlaps instead of drawing every tick', () => {
 		const option = buildChartOption(data, settings(), theme, false);
-		const xAxis = option.xAxis as { axisLabel?: { interval?: number; hideOverlap?: boolean; rotate?: number } };
-		assert.equal(xAxis.axisLabel?.interval, 0);
-		assert.equal(xAxis.axisLabel?.hideOverlap, false);
-		assert.ok((xAxis.axisLabel?.rotate ?? 0) > 0);
+		const xAxis = option.xAxis as {
+			axisLabel?: {
+				interval?: number | string;
+				hideOverlap?: boolean;
+				rotate?: number;
+				showMinLabel?: boolean;
+				showMaxLabel?: boolean;
+			};
+		};
+		assert.equal(xAxis.axisLabel?.interval, 'auto');
+		assert.equal(xAxis.axisLabel?.hideOverlap, true);
+		assert.equal(xAxis.axisLabel?.rotate, 45);
+		assert.equal(xAxis.axisLabel?.showMinLabel, true);
+		assert.equal(xAxis.axisLabel?.showMaxLabel, true);
+		const expected = categoryAxisLabel(theme, 'bottom');
+		assert.equal(expected.interval, 'auto');
+		assert.equal(typeof expected.interval === 'function', false);
 	});
 
 	it('uses theme text colors instead of hardcoded light-theme ink', () => {
@@ -141,7 +155,7 @@ describe('buildChartOption', () => {
 		assert.equal(option.backgroundColor, 'transparent');
 	});
 
-	it('shows every rotated X label on a dense vertical bar chart', () => {
+	it('keeps 45° rotation and hideOverlap on a dense vertical bar chart', () => {
 		const labels = [
 			'source-jammles9',
 			'source-alpha',
@@ -173,29 +187,29 @@ describe('buildChartOption', () => {
 		};
 		const grid = option.grid as { bottom?: number };
 		assert.equal(xAxis.data?.length, 12);
-		assert.equal(xAxis.axisLabel?.interval, 0);
-		assert.equal(xAxis.axisLabel?.hideOverlap, false);
-		assert.ok((xAxis.axisLabel?.rotate ?? 0) > 0);
+		assert.equal(xAxis.axisLabel?.interval, 'auto');
+		assert.equal(xAxis.axisLabel?.hideOverlap, true);
+		assert.equal(xAxis.axisLabel?.rotate, 45);
 		assert.ok((grid.bottom ?? 0) >= 100);
 	});
 
-	it('shows every category label on horizontal bar and heatmap axes', () => {
+	it('hides overlapping labels on horizontal bar and heatmap axes', () => {
 		const horizontal = buildChartOption(data, settings({ chartType: 'bar-horizontal' }), theme, false);
 		const yAxis = horizontal.yAxis as {
 			axisLabel?: { interval?: number | string; hideOverlap?: boolean; rotate?: number };
 		};
-		assert.equal(yAxis.axisLabel?.interval, 0);
-		assert.equal(yAxis.axisLabel?.hideOverlap, false);
+		assert.equal(yAxis.axisLabel?.interval, 'auto');
+		assert.equal(yAxis.axisLabel?.hideOverlap, true);
 		assert.equal(yAxis.axisLabel?.rotate ?? 0, 0);
 
 		const heat = buildChartOption(data, settings({ chartType: 'heatmap' }), theme, false);
-		const heatX = heat.xAxis as { axisLabel?: { interval?: number; hideOverlap?: boolean; rotate?: number } };
-		const heatY = heat.yAxis as { axisLabel?: { interval?: number; hideOverlap?: boolean } };
-		assert.equal(heatX.axisLabel?.interval, 0);
-		assert.equal(heatX.axisLabel?.hideOverlap, false);
-		assert.ok((heatX.axisLabel?.rotate ?? 0) > 0);
-		assert.equal(heatY.axisLabel?.interval, 0);
-		assert.equal(heatY.axisLabel?.hideOverlap, false);
+		const heatX = heat.xAxis as { axisLabel?: { interval?: number | string; hideOverlap?: boolean; rotate?: number } };
+		const heatY = heat.yAxis as { axisLabel?: { interval?: number | string; hideOverlap?: boolean } };
+		assert.equal(heatX.axisLabel?.interval, 'auto');
+		assert.equal(heatX.axisLabel?.hideOverlap, true);
+		assert.equal(heatX.axisLabel?.rotate, 45);
+		assert.equal(heatY.axisLabel?.interval, 'auto');
+		assert.equal(heatY.axisLabel?.hideOverlap, true);
 	});
 
 	it('uses a log Y axis on bar charts and does not crash on zero', () => {
@@ -727,9 +741,9 @@ describe('buildChartOption', () => {
 		assert.equal(typeof axes[0]?.axisLabel?.formatter, 'function');
 		assert.equal(typeof axes[1]?.axisLabel?.formatter, 'function');
 		const bar = buildChartOption(data, settings(), theme, false);
-		const xAxis = bar.xAxis as { axisLabel?: { interval?: number; hideOverlap?: boolean } };
-		assert.equal(xAxis.axisLabel?.interval, 0);
-		assert.equal(xAxis.axisLabel?.hideOverlap, false);
+		const xAxis = bar.xAxis as { axisLabel?: { interval?: number | string; hideOverlap?: boolean } };
+		assert.equal(xAxis.axisLabel?.interval, 'auto');
+		assert.equal(xAxis.axisLabel?.hideOverlap, true);
 	});
 
 	it('opens notes on a treemap leaf but not an un-modified parent zoom click', () => {
@@ -938,10 +952,34 @@ describe('buildChartOption', () => {
 			assert.ok((zoom.start ?? 0) > 0);
 			assert.equal(zoom.end, 100);
 		}
-		const xAxis = option.xAxis as { data?: string[] };
+		const xAxis = option.xAxis as {
+			data?: string[];
+			axisLabel?: {
+				interval?: number | string;
+				hideOverlap?: boolean;
+				rotate?: number;
+				showMinLabel?: boolean;
+				showMaxLabel?: boolean;
+			};
+		};
 		assert.equal(xAxis.data?.length, stacked.categories.length);
 		assert.equal(xAxis.data?.includes('(empty)'), false);
 		assert.equal(categoryWindowHint(12, stacked.categories.length), '12 of 33 categories');
+		assert.equal(xAxis.axisLabel?.interval, 'auto');
+		assert.equal(xAxis.axisLabel?.hideOverlap, true);
+		assert.equal(xAxis.axisLabel?.rotate, 45);
+		assert.equal(xAxis.axisLabel?.showMinLabel, true);
+		assert.equal(xAxis.axisLabel?.showMaxLabel, true);
+	});
+
+	it('does not collapse a dense week axis to first and last labels only', () => {
+		const ticks = categoryAxisLabel(theme, 'bottom');
+		assert.equal(ticks.interval, 'auto');
+		assert.equal(ticks.hideOverlap, true);
+		assert.equal(ticks.showMinLabel, true);
+		assert.equal(ticks.showMaxLabel, true);
+		assert.equal(ticks.rotate, 45);
+		assert.equal(typeof ticks.interval, 'string');
 	});
 
 	it('puts a bottom slider on a dense calendar-day area chart', () => {
