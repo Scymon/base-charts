@@ -21,6 +21,8 @@ import {
 	SunburstChart,
 	ThemeRiverChart,
 	TreemapChart,
+	TreeChart,
+	ParallelChart,
 } from 'echarts/charts';
 import {
 	BrushComponent,
@@ -29,9 +31,12 @@ import {
 	DataZoomInsideComponent,
 	GridComponent,
 	LegendComponent,
+	ParallelComponent,
 	PolarComponent,
 	RadarComponent,
 	SingleAxisComponent,
+	TimelineComponent,
+	TitleComponent,
 	TooltipComponent,
 	VisualMapComponent,
 } from 'echarts/components';
@@ -72,7 +77,12 @@ echarts.use([
 	SunburstChart,
 	SankeyChart,
 	ThemeRiverChart,
+	TreeChart,
+	ParallelChart,
 	PolarComponent,
+	ParallelComponent,
+	TimelineComponent,
+	TitleComponent,
 	SingleAxisComponent,
 	GridComponent,
 	TooltipComponent,
@@ -100,6 +110,8 @@ export class MotionChartView extends BasesView {
 	private defaultsApplied = false;
 	private lastData: AggregatedChart | null = null;
 	private clickBound = false;
+	private drillName: string | null = null;
+	private lastChartType: ChartSettings['chartType'] | null = null;
 
 	constructor(controller: QueryController, parentEl: HTMLElement) {
 		super(controller);
@@ -147,6 +159,10 @@ export class MotionChartView extends BasesView {
 
 	private render(): void {
 		const settings = this.readSettings();
+		if (this.lastChartType !== settings.chartType) {
+			this.drillName = null;
+			this.lastChartType = settings.chartType;
+		}
 		const rows = this.collectRows(settings);
 		const aggregated = aggregateRows(rows, settings);
 		this.lastData = aggregated;
@@ -176,7 +192,9 @@ export class MotionChartView extends BasesView {
 		this.emptyEl.hide();
 		this.chartEl.show();
 		const theme = readChartTheme(this.rootEl);
-		const option = buildChartOption(aggregated, settings, theme, prefersReducedMotion());
+		const option = buildChartOption(aggregated, settings, theme, prefersReducedMotion(), {
+			drillName: this.drillName,
+		});
 		this.ensureChart().setOption(option, {
 			replaceMerge: [
 				'series',
@@ -190,6 +208,11 @@ export class MotionChartView extends BasesView {
 				'angleAxis',
 				'radiusAxis',
 				'singleAxis',
+				'timeline',
+				'parallel',
+				'parallelAxis',
+				'title',
+				'options',
 			],
 		});
 		this.chart?.resize({ width: 'auto', height: 'auto' });
@@ -217,7 +240,13 @@ export class MotionChartView extends BasesView {
 			this.clickBound = true;
 			this.chart.on('click', (params) => this.onChartClick(params as ClickPayload));
 			this.chart.getZr().on('click', (event) => {
-				if (!event.target) this.hideNotes();
+				if (!event.target) {
+					this.hideNotes();
+					if (this.drillName) {
+						this.drillName = null;
+						this.render();
+					}
+				}
 			});
 			this.chart.on('datazoom', (raw) => {
 				const ev = raw as { start?: number; end?: number; batch?: { start?: number; end?: number }[] };
@@ -235,6 +264,11 @@ export class MotionChartView extends BasesView {
 
 	private onChartClick(payload: ClickPayload): void {
 		if (!this.lastData) return;
+		if (this.readSettings().chartType === 'icicle' && !shouldOpenNotesOnClick(payload)) {
+			this.drillName = payload.name ?? payload.data?.name ?? null;
+			this.render();
+			return;
+		}
 		if (!shouldOpenNotesOnClick(payload)) return;
 		const notes = resolveClickNotes(this.lastData, payload);
 		const top = pickOpenNote(notes);

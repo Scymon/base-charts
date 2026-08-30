@@ -1,5 +1,10 @@
-import type { EChartsOption, SeriesOption } from 'echarts';
-import { binCounts, boxFive } from './aggregate.ts';
+import type {
+	CustomSeriesRenderItemAPI,
+	CustomSeriesRenderItemReturn,
+	EChartsOption,
+	SeriesOption,
+} from 'echarts';
+import { binCounts, boxFive, parseChartDate } from './aggregate.ts';
 import { formatAxisTick, formatNumber } from './format.ts';
 import { formatCategoryTooltip } from './tooltip.ts';
 import type { AggregatedChart, ChartSettings, ChartTheme } from './types.ts';
@@ -21,6 +26,12 @@ const CARTESIAN_TYPES = new Set<ChartSettings['chartType']>([
 	'dumbbell',
 	'ridgeline',
 	'waterfall',
+	'marimekko',
+	'bullet',
+	'slope',
+	'histogram',
+	'violin',
+	'bar-race',
 ]);
 
 const LOG_Y_TYPES = new Set<ChartSettings['chartType']>([
@@ -36,6 +47,11 @@ const LOG_Y_TYPES = new Set<ChartSettings['chartType']>([
 	'scatter',
 	'boxplot',
 	'dumbbell',
+	'bullet',
+	'slope',
+	'histogram',
+	'violin',
+	'bar-race',
 ]);
 
 const ZOOM_TYPES = new Set<ChartSettings['chartType']>([
@@ -52,6 +68,11 @@ const ZOOM_TYPES = new Set<ChartSettings['chartType']>([
 	'boxplot',
 	'dumbbell',
 	'waterfall',
+	'bullet',
+	'slope',
+	'histogram',
+	'violin',
+	'bar-race',
 ]);
 
 export const ZOOM_AFTER = 12;
@@ -304,6 +325,7 @@ export function buildChartOption(
 	settings: ChartSettings,
 	theme: ChartTheme,
 	reduceMotion: boolean,
+	extras: { drillName?: string | null } = {},
 ): EChartsOption {
 	const anim = animationConfig(reduceMotion);
 	const colors = theme.colors;
@@ -319,6 +341,14 @@ export function buildChartOption(
 				settings.chartType === 'sunburst' ||
 				settings.chartType === 'waffle' ||
 				settings.chartType === 'streamgraph' ||
+				settings.chartType === 'icicle' ||
+				settings.chartType === 'tree' ||
+				settings.chartType === 'parallel' ||
+				settings.chartType === 'network' ||
+				settings.chartType === 'marimekko' ||
+				settings.chartType === 'slope' ||
+				settings.chartType === 'histogram' ||
+				settings.chartType === 'violin' ||
 				(settings.chartType === 'combo' && data.hasY2) ||
 				settings.chartType === 'ridgeline'),
 		textStyle: { color: theme.muted },
@@ -1082,11 +1112,42 @@ export function buildChartOption(
 		};
 	}
 
+	if (settings.chartType === 'icicle') {
+		return icicleOption(data, settings, theme, reduceMotion, anim, colors, legend, extras.drillName);
+	}
+	if (settings.chartType === 'tree') {
+		return treeOption(data, settings, theme, reduceMotion, anim, colors, legend);
+	}
+	if (settings.chartType === 'parallel') {
+		return parallelOption(data, settings, theme, reduceMotion, anim, colors, legend);
+	}
+	if (settings.chartType === 'network') {
+		return networkOption(data, settings, theme, reduceMotion, anim, colors);
+	}
+	if (settings.chartType === 'marimekko') {
+		return marimekkoOption(data, settings, theme, reduceMotion, anim, colors, legend);
+	}
+	if (settings.chartType === 'bullet') {
+		return bulletOption(data, settings, theme, reduceMotion, anim, colors, logY);
+	}
+	if (settings.chartType === 'slope' && data.seriesNames.length >= 2) {
+		return slopeOption(data, settings, theme, reduceMotion, anim, colors, legend, logY);
+	}
+	if (settings.chartType === 'histogram') {
+		return histogramOption(data, settings, theme, reduceMotion, anim, colors, legend, logY);
+	}
+	if (settings.chartType === 'violin') {
+		return violinOption(data, settings, theme, reduceMotion, anim, colors, legend, logY);
+	}
+	if (settings.chartType === 'bar-race' && hasDateCategories(data.categories)) {
+		return barRaceOption(data, settings, theme, reduceMotion, anim, colors, logY);
+	}
+
 	const horizontal = settings.chartType === 'bar-horizontal';
 	const stacked = settings.chartType === 'bar-stacked';
 	const percent = settings.chartType === 'bar-percent';
 	const combo = settings.chartType === 'combo';
-	const lollipop = settings.chartType === 'lollipop';
+	const lollipop = settings.chartType === 'lollipop' || settings.chartType === 'slope';
 	const stackedArea = settings.chartType === 'area-stacked';
 	const stepLine = settings.chartType === 'line-step';
 	const zoom = dataZoomOption(data, settings, horizontal);
@@ -1215,7 +1276,13 @@ export function buildChartOption(
 	};
 }
 
-function nestHierarchy(data: AggregatedChart) {
+interface HierarchyNode {
+	name: string;
+	value: number;
+	children?: HierarchyNode[];
+}
+
+function nestHierarchy(data: AggregatedChart): HierarchyNode[] {
 	if (data.seriesNames.length > 1) {
 		return data.seriesNames.map((series, seriesIndex) => {
 			const children = namedValues(data.categories, data.values[seriesIndex] ?? []);
@@ -1227,6 +1294,697 @@ function nestHierarchy(data: AggregatedChart) {
 		});
 	}
 	return namedValues(data.categories, categoryTotals(data));
+}
+
+function findHierarchyNode(nodes: HierarchyNode[], name: string): HierarchyNode | null {
+	for (const node of nodes) {
+		if (node.name === name) return node;
+		if (node.children?.length) {
+			const nested = findHierarchyNode(node.children, name);
+			if (nested) return nested;
+		}
+	}
+	return null;
+}
+
+function drillHierarchy(nodes: HierarchyNode[], rootName?: string | null): HierarchyNode[] {
+	if (!rootName) return nodes;
+	const found = findHierarchyNode(nodes, rootName);
+	if (!found) return nodes;
+	return found.children?.length ? found.children : [found];
+}
+
+function hierarchyDepth(nodes: HierarchyNode[]): number {
+	if (nodes.length === 0) return 1;
+	return 1 + Math.max(0, ...nodes.map((node) => (node.children?.length ? hierarchyDepth(node.children) : 0)));
+}
+
+export function icicleLabelVisible(width: number, height: number): boolean {
+	return width >= 28 && height >= 12;
+}
+
+export function icicleLabelLayout(params: { rect?: { width?: number; height?: number } }) {
+	const width = params.rect?.width ?? 0;
+	const height = params.rect?.height ?? 0;
+	if (!icicleLabelVisible(width, height)) {
+		return { fontSize: 0, width: 0, height: 0 };
+	}
+	return {
+		fontSize: height >= 22 && width >= 56 ? 12 : 11,
+		width: Math.max(0, width - 8),
+	};
+}
+
+function layoutIcicle(
+	nodes: HierarchyNode[],
+	x: number,
+	y: number,
+	width: number,
+	height: number,
+	remaining: number,
+): { name: string; value: number[]; children?: { name: string }[] }[] {
+	const levelH = remaining <= 0 ? height : height / remaining;
+	const total = nodes.reduce((sum, node) => sum + Math.max(0, node.value), 0) || 1;
+	let cursor = x;
+	const rects: { name: string; value: number[]; children?: { name: string }[] }[] = [];
+	for (const node of nodes) {
+		const nodeW = width * (Math.max(0, node.value) / total);
+		const children = node.children ?? [];
+		rects.push({
+			name: node.name,
+			value: [cursor, y, nodeW, levelH, node.value],
+			children: children.length > 0 ? children.map((child) => ({ name: child.name })) : undefined,
+		});
+		if (children.length > 0 && remaining > 1) {
+			rects.push(...layoutIcicle(children, cursor, y + levelH, nodeW, height - levelH, remaining - 1));
+		}
+		cursor += nodeW;
+	}
+	return rects;
+}
+
+export function hasDateCategories(categories: string[]): boolean {
+	if (categories.length === 0) return false;
+	const dated = categories.filter((category) => parseChartDate(category));
+	return dated.length >= Math.max(1, Math.ceil(categories.length * 0.5));
+}
+
+export function sturgesBinCount(n: number): number {
+	if (n <= 1) return 1;
+	return Math.min(24, Math.max(5, Math.ceil(Math.log2(n) + 1)));
+}
+
+export function marimekkoWidths(data: AggregatedChart): number[] {
+	const totals = categoryTotals(data);
+	const grand = totals.reduce((sum, value) => sum + Math.max(0, value), 0);
+	if (!(grand > 0)) {
+		const n = Math.max(1, totals.length);
+		return totals.map(() => 1 / n);
+	}
+	return totals.map((value) => Math.max(0, value) / grand);
+}
+
+function categoryRawValues(data: AggregatedChart, index: number): number[] {
+	return data.seriesNames.flatMap((_, seriesIndex) => data.rawValues[seriesIndex]?.[index] ?? []);
+}
+
+function allRawY(data: AggregatedChart): number[] {
+	return data.rawValues.flat(2).filter((value) => Number.isFinite(value));
+}
+
+function customRectItem(
+	api: CustomSeriesRenderItemAPI,
+	theme: ChartTheme,
+	label?: string,
+): CustomSeriesRenderItemReturn {
+	const x = Number(api.value(0));
+	const y = Number(api.value(1));
+	const w = Number(api.value(2));
+	const h = Number(api.value(3));
+	const start = api.coord([x, y]);
+	const end = api.coord([x + w, y + h]);
+	const width = Math.abs((end[0] ?? 0) - (start[0] ?? 0));
+	const height = Math.abs((end[1] ?? 0) - (start[1] ?? 0));
+	const left = Math.min(start[0] ?? 0, end[0] ?? 0);
+	const top = Math.min(start[1] ?? 0, end[1] ?? 0);
+	const children: object[] = [
+		{
+			type: 'rect',
+			shape: { x: left, y: top, width, height },
+			style: {
+				fill: api.visual('color'),
+				stroke: theme.background,
+				lineWidth: 1,
+			},
+		},
+	];
+	if (label && icicleLabelVisible(width, height)) {
+		children.push({
+			type: 'text',
+			style: {
+				x: left + 4,
+				y: top + height / 2,
+				text: label,
+				fill: theme.text,
+				font: '11px sans-serif',
+				textVerticalAlign: 'middle',
+				width: Math.max(0, width - 8),
+				overflow: 'truncate',
+			},
+		});
+	}
+	return { type: 'group', children } as CustomSeriesRenderItemReturn;
+}
+
+function icicleOption(
+	data: AggregatedChart,
+	settings: ChartSettings,
+	theme: ChartTheme,
+	reduceMotion: boolean,
+	anim: object,
+	colors: string[],
+	legend: object,
+	drillName?: string | null,
+): EChartsOption {
+	const nested = drillHierarchy(nestHierarchy(data), drillName);
+	const depth = hierarchyDepth(nested);
+	const rects = layoutIcicle(nested, 0, 0, 1, 1, depth);
+	return {
+		...anim,
+		backgroundColor: theme.background,
+		color: colors,
+		legend,
+		title: drillName
+			? { text: drillName, left: 8, top: 0, textStyle: { color: theme.muted, fontSize: 12 } }
+			: undefined,
+		tooltip: categoryTooltip(theme, data, settings, 'item'),
+		grid: { top: drillName ? 28 : 8, right: 8, bottom: 8, left: 8, containLabel: false },
+		xAxis: { type: 'value', min: 0, max: 1, show: false },
+		yAxis: { type: 'value', min: 0, max: 1, inverse: true, show: false },
+		series: [
+			{
+				type: 'custom',
+				coordinateSystem: 'cartesian2d',
+				data: rects,
+				encode: { x: 0, y: 1 },
+				labelLayout: icicleLabelLayout,
+				renderItem: (params, api) => customRectItem(api, theme, rects[params.dataIndex]?.name),
+				...motion(reduceMotion, 'icicle'),
+			},
+		],
+	};
+}
+
+function treeOption(
+	data: AggregatedChart,
+	settings: ChartSettings,
+	theme: ChartTheme,
+	reduceMotion: boolean,
+	anim: object,
+	colors: string[],
+	legend: object,
+): EChartsOption {
+	const nested = nestHierarchy(data);
+	const nestedLevels = data.seriesNames.length > 1;
+	const roots =
+		nested.length === 1
+			? nested
+			: [
+					{
+						name: ' ',
+						value: nested.reduce((sum, node) => sum + node.value, 0),
+						children: nested,
+					},
+				];
+	return {
+		...anim,
+		backgroundColor: theme.background,
+		color: colors,
+		legend,
+		tooltip: categoryTooltip(theme, data, settings, 'item'),
+		series: [
+			{
+				type: 'tree',
+				data: roots,
+				roam: true,
+				layout: nestedLevels ? 'orthogonal' : 'radial',
+				orient: 'LR',
+				symbol: 'emptyCircle',
+				symbolSize: 8,
+				expandAndCollapse: true,
+				initialTreeDepth: 4,
+				label: { show: false, color: theme.text },
+				leaves: {
+					label: {
+						show: true,
+						position: nestedLevels ? 'right' : 'inside',
+						color: theme.text,
+						distance: 8,
+					},
+				},
+				lineStyle: { color: theme.border, width: 1.2, curveness: nestedLevels ? 0.4 : 0.5 },
+				...motion(reduceMotion, 'tree'),
+			},
+		],
+	};
+}
+
+function parallelOption(
+	data: AggregatedChart,
+	settings: ChartSettings,
+	theme: ChartTheme,
+	reduceMotion: boolean,
+	anim: object,
+	colors: string[],
+	legend: object,
+): EChartsOption {
+	const axisNames = data.categories.length > 0 ? data.categories : ['Value'];
+	const lineNames = data.seriesNames.length > 0 ? data.seriesNames : ['Value'];
+	const lines = lineNames.map((name, seriesIndex) => ({
+		name,
+		value: axisNames.map((_, index) => data.values[seriesIndex]?.[index] ?? 0),
+	}));
+	return {
+		...anim,
+		backgroundColor: theme.background,
+		color: colors,
+		legend,
+		tooltip: { ...tooltipBase(theme), trigger: 'item' },
+		parallel: { left: 72, right: 48, top: 48, bottom: 24 },
+		parallelAxis: axisNames.map((name, dim) => ({
+			dim,
+			name,
+			nameLocation: 'end' as const,
+			nameGap: 8,
+			nameTextStyle: { color: theme.muted, fontSize: 11 },
+			axisLine: { lineStyle: { color: theme.border } },
+			axisTick: { lineStyle: { color: theme.border } },
+			axisLabel: { color: theme.muted, formatter: formatAxisTick },
+		})),
+		series: [
+			{
+				type: 'parallel',
+				lineStyle: { width: 1.6, opacity: 0.7 },
+				data: lines,
+				...motion(reduceMotion, 'parallel'),
+			},
+		],
+	};
+}
+
+function networkOption(
+	data: AggregatedChart,
+	settings: ChartSettings,
+	theme: ChartTheme,
+	reduceMotion: boolean,
+	anim: object,
+	colors: string[],
+): EChartsOption {
+	const targets = data.seriesNames;
+	const nodeNames = [...new Set([...data.categories, ...targets])];
+	const links: { source: string; target: string; value: number }[] = [];
+	data.seriesNames.forEach((series, seriesIndex) => {
+		data.categories.forEach((category, index) => {
+			const value = data.values[seriesIndex]?.[index] ?? 0;
+			if (value <= 0 || category === series) return;
+			links.push({ source: category, target: series, value });
+		});
+	});
+	const totals = new Map<string, number>();
+	for (const name of nodeNames) totals.set(name, 0);
+	for (const link of links) {
+		totals.set(link.source, (totals.get(link.source) ?? 0) + link.value);
+		totals.set(link.target, (totals.get(link.target) ?? 0) + link.value);
+	}
+	const max = Math.max(1, ...totals.values(), ...links.map((link) => link.value));
+	return {
+		...anim,
+		backgroundColor: theme.background,
+		color: colors,
+		tooltip: categoryTooltip(theme, data, settings, 'item'),
+		series: [
+			{
+				type: 'graph',
+				layout: 'force',
+				roam: true,
+				force: { repulsion: 240, edgeLength: [48, 180], gravity: 0.07, friction: 0.2 },
+				data: nodeNames.map((name) => ({
+					name,
+					value: totals.get(name) ?? 0,
+					symbolSize: 14 + Math.sqrt((totals.get(name) ?? 0) / max) * 36,
+				})),
+				links: links.map((link) => ({
+					...link,
+					lineStyle: {
+						width: 1 + (link.value / max) * 10,
+						opacity: 0.5,
+						color: 'source',
+					},
+				})),
+				label: { ...labelStyle(theme, true) },
+				lineStyle: { color: 'source', opacity: 0.45 },
+				...motion(reduceMotion, 'network'),
+			},
+		],
+	};
+}
+
+function marimekkoOption(
+	data: AggregatedChart,
+	settings: ChartSettings,
+	theme: ChartTheme,
+	reduceMotion: boolean,
+	anim: object,
+	colors: string[],
+	legend: object,
+): EChartsOption {
+	const widths = marimekkoWidths(data);
+	const totals = categoryTotals(data);
+	const cells: {
+		name: string;
+		seriesName: string;
+		value: number[];
+		itemStyle: { color: string };
+	}[] = [];
+	let x = 0;
+	data.categories.forEach((category, index) => {
+		const width = widths[index] ?? 0;
+		const total = totals[index] ?? 0;
+		let y = 0;
+		data.seriesNames.forEach((series, seriesIndex) => {
+			const amount = data.values[seriesIndex]?.[index] ?? 0;
+			const height = total > 0 ? Math.max(0, amount) / total : 0;
+			cells.push({
+				name: category,
+				seriesName: series,
+				value: [x, y, width, height, amount],
+				itemStyle: { color: colors[seriesIndex % colors.length] ?? theme.accent },
+			});
+			y += height;
+		});
+		x += width;
+	});
+	return {
+		...anim,
+		backgroundColor: theme.background,
+		color: colors,
+		legend,
+		tooltip: categoryTooltip(theme, data, settings, 'item'),
+		grid: { top: 40, right: 16, bottom: 48, left: 16, containLabel: true },
+		xAxis: { type: 'value', min: 0, max: 1, show: false },
+		yAxis: { type: 'value', min: 0, max: 1, show: false },
+		series: [
+			{
+				type: 'custom',
+				coordinateSystem: 'cartesian2d',
+				data: cells,
+				encode: { x: 0, y: 1 },
+				renderItem: (params, api) =>
+					customRectItem(
+						api,
+						theme,
+						settings.showLabels ? cells[params.dataIndex]?.name : undefined,
+					),
+				...motion(reduceMotion, 'marimekko'),
+			},
+		],
+	};
+}
+
+function bulletOption(
+	data: AggregatedChart,
+	settings: ChartSettings,
+	theme: ChartTheme,
+	reduceMotion: boolean,
+	anim: object,
+	colors: string[],
+	logY: boolean,
+): EChartsOption {
+	const zoom = dataZoomOption(data, settings, true);
+	const totals = categoryTotals(data);
+	const fallback = data.overall ?? 0;
+	const targets = data.categories.map((_, index) =>
+		data.hasY2 ? (data.y2Category[index] ?? fallback) : fallback,
+	);
+	return {
+		...anim,
+		backgroundColor: theme.background,
+		color: colors,
+		tooltip: categoryTooltip(theme, data, settings),
+		grid: cartesianGrid(true, data.categories),
+		dataZoom: zoom.dataZoom,
+		xAxis: valueAxisOption(theme, settings.showGrid, logY),
+		yAxis: {
+			type: 'category',
+			data: data.categories,
+			...axisCommon(theme, false),
+			axisLabel: categoryAxisLabel(theme, 'left'),
+		},
+		series: [
+			{
+				type: 'bar',
+				barWidth: '46%',
+				data: namedCategoryData(data.categories, totals, logY),
+				label: { ...labelStyle(theme, settings.showLabels), position: 'right' },
+				...motion(reduceMotion, 'bullet'),
+			},
+			{
+				name: data.hasY2 ? 'Y2' : settings.aggregation,
+				type: 'scatter',
+				symbol: 'rect',
+				symbolSize: [5, 22],
+				itemStyle: { color: theme.text },
+				data: data.categories.map((name, index) => ({
+					name,
+					value: logSafeValue(targets[index] ?? 0, logY),
+				})),
+				z: 5,
+				...motion(reduceMotion, 'bullet-mark'),
+			},
+		],
+	};
+}
+
+function slopeOption(
+	data: AggregatedChart,
+	settings: ChartSettings,
+	theme: ChartTheme,
+	reduceMotion: boolean,
+	anim: object,
+	colors: string[],
+	legend: object,
+	logY: boolean,
+): EChartsOption {
+	const zoom = dataZoomOption(data, settings, false);
+	return {
+		...anim,
+		backgroundColor: theme.background,
+		color: colors,
+		legend,
+		tooltip: categoryTooltip(theme, data, settings),
+		grid: cartesianGrid(false, data.seriesNames, { bottom: 80 }),
+		dataZoom: zoom.dataZoom,
+		xAxis: {
+			type: 'category',
+			data: data.seriesNames,
+			...axisCommon(theme, settings.showGrid),
+			axisLabel: categoryAxisLabel(theme, 'bottom'),
+		},
+		yAxis: valueAxisOption(theme, settings.showGrid, logY),
+		series: data.categories.map((category, index) => ({
+			name: category,
+			type: 'line',
+			showSymbol: true,
+			symbolSize: 10,
+			data: data.seriesNames.map((series, seriesIndex) => ({
+				name: series,
+				value: logSafeValue(data.values[seriesIndex]?.[index] ?? 0, logY),
+			})),
+			label: labelStyle(theme, settings.showLabels),
+			...motion(reduceMotion, category),
+		})),
+	};
+}
+
+function histogramOption(
+	data: AggregatedChart,
+	settings: ChartSettings,
+	theme: ChartTheme,
+	reduceMotion: boolean,
+	anim: object,
+	colors: string[],
+	legend: object,
+	logY: boolean,
+): EChartsOption {
+	const facet = data.categories.length >= 2 && data.categories.length <= 6;
+	const all = allRawY(data);
+	const domain = all.length > 0 ? { min: Math.min(...all), max: Math.max(...all) } : undefined;
+	const groups = facet
+		? data.categories.map((name, index) => ({ name, values: categoryRawValues(data, index) }))
+		: [{ name: data.seriesNames[0] ?? 'Value', values: all }];
+	const binCount = sturgesBinCount(Math.max(all.length, 1));
+	const series: SeriesOption[] = groups.map((group) => {
+		const bins = binCounts(group.values, binCount, domain);
+		return {
+			name: group.name,
+			type: 'bar',
+			barMaxWidth: facet ? 18 : 28,
+			data: bins.map((bin) => ({
+				name: formatNumber(bin.mid),
+				value: [bin.mid, logSafeValue(bin.count, logY)],
+				rawCount: bin.count,
+			})),
+			...motion(reduceMotion, group.name),
+		};
+	});
+	return {
+		...anim,
+		backgroundColor: theme.background,
+		color: colors,
+		legend: { ...legend, show: settings.showLegend && facet },
+		tooltip: { ...tooltipBase(theme), trigger: 'axis' },
+		grid: cartesianGrid(false, data.categories, { bottom: 64 }),
+		xAxis: {
+			type: 'value',
+			...axisCommon(theme, settings.showGrid),
+			axisLabel: { color: theme.muted, formatter: formatAxisTick },
+		},
+		yAxis: valueAxisOption(theme, settings.showGrid, logY, { name: 'Count' }),
+		series,
+	};
+}
+
+function violinOption(
+	data: AggregatedChart,
+	settings: ChartSettings,
+	theme: ChartTheme,
+	reduceMotion: boolean,
+	anim: object,
+	colors: string[],
+	legend: object,
+	logY: boolean,
+): EChartsOption {
+	const all = allRawY(data).filter((value) => !logY || value > 0);
+	const domain = all.length > 0 ? { min: Math.min(...all), max: Math.max(...all) } : undefined;
+	const binCount = sturgesBinCount(Math.max(all.length, 1));
+	const groups = data.categories.map((name, index) => ({
+		name,
+		bins: binCounts(
+			categoryRawValues(data, index).filter((value) => !logY || value > 0),
+			binCount,
+			domain,
+		),
+	}));
+	const maxCount = Math.max(1, ...groups.flatMap((group) => group.bins.map((bin) => bin.count)));
+	const series: SeriesOption[] = groups.map((group, index) => ({
+		name: group.name,
+		type: 'custom',
+		coordinateSystem: 'cartesian2d',
+		data: [
+			{
+				name: group.name,
+				value: index,
+				bins: group.bins,
+			},
+		],
+		encode: { x: 0, y: 1 },
+		renderItem: (_params, api) => {
+			const categoryIndex = Number(api.value(0));
+			const half = 0.42;
+			const points: number[][] = [];
+			for (const bin of group.bins) {
+				const width = ((bin.count / maxCount) * half) || 0;
+				const coord = api.coord([categoryIndex + width, bin.mid]);
+				points.push([coord[0] ?? 0, coord[1] ?? 0]);
+			}
+			for (let i = group.bins.length - 1; i >= 0; i -= 1) {
+				const bin = group.bins[i];
+				if (!bin) continue;
+				const width = ((bin.count / maxCount) * half) || 0;
+				const coord = api.coord([categoryIndex - width, bin.mid]);
+				points.push([coord[0] ?? 0, coord[1] ?? 0]);
+			}
+			return {
+				type: 'polygon',
+				shape: { points },
+				style: {
+					fill: api.visual('color') as string,
+					opacity: 0.55,
+					stroke: theme.background,
+					lineWidth: 1,
+				},
+			};
+		},
+		...motion(reduceMotion, group.name),
+	}));
+	return {
+		...anim,
+		backgroundColor: theme.background,
+		color: colors,
+		legend,
+		tooltip: categoryTooltip(theme, data, settings, 'item'),
+		grid: cartesianGrid(false, data.categories),
+		xAxis: {
+			type: 'category',
+			data: data.categories,
+			...axisCommon(theme, settings.showGrid),
+			axisLabel: categoryAxisLabel(theme, 'bottom'),
+		},
+		yAxis: valueAxisOption(theme, settings.showGrid, logY),
+		series,
+	};
+}
+
+function barRaceOption(
+	data: AggregatedChart,
+	settings: ChartSettings,
+	theme: ChartTheme,
+	reduceMotion: boolean,
+	anim: object,
+	colors: string[],
+	logY: boolean,
+): EChartsOption {
+	const frames = data.categories.map((date, timeIndex) => {
+		const items = data.seriesNames
+			.map((name, seriesIndex) => ({
+				name,
+				value: logSafeValue(data.values[seriesIndex]?.[timeIndex] ?? 0, logY),
+				raw: data.values[seriesIndex]?.[timeIndex] ?? 0,
+			}))
+			.sort((left, right) => (left.raw ?? 0) - (right.raw ?? 0));
+		return { date, items };
+	});
+	const first = frames[0]?.items ?? [];
+	return {
+		...anim,
+		backgroundColor: theme.background,
+		color: colors,
+		tooltip: categoryTooltip(theme, data, settings),
+		timeline: {
+			axisType: 'category',
+			autoPlay: !reduceMotion,
+			rewind: true,
+			loop: true,
+			playInterval: 1400,
+			data: data.categories,
+			left: 48,
+			right: 48,
+			bottom: 8,
+			height: 36,
+			label: { color: theme.muted },
+			lineStyle: { color: theme.border },
+			itemStyle: { color: theme.accent },
+			controlStyle: { color: theme.muted, borderColor: theme.border },
+			checkpointStyle: { color: theme.accent, borderColor: theme.accent },
+			progress: { lineStyle: { color: theme.accent } },
+		},
+		grid: { top: 40, right: 36, bottom: 64, left: 16, containLabel: true },
+		xAxis: valueAxisOption(theme, settings.showGrid, logY),
+		yAxis: {
+			type: 'category',
+			data: first.map((item) => item.name),
+			...axisCommon(theme, false),
+			axisLabel: categoryAxisLabel(theme, 'left'),
+		},
+		options: frames.map((frame) => ({
+			title: {
+				text: frame.date,
+				left: 12,
+				top: 8,
+				textStyle: { color: theme.muted, fontSize: 12 },
+			},
+			yAxis: { data: frame.items.map((item) => item.name) },
+			series: [
+				{
+					type: 'bar',
+					id: 'motion-race',
+					data: frame.items,
+					label: { ...labelStyle(theme, settings.showLabels), position: 'right' },
+					universalTransition: reduceMotion ? false : { enabled: true, seriesKey: 'race' },
+				},
+			],
+		})),
+	};
 }
 
 function waffleCells(categories: string[], totals: number[], colors: string[]) {

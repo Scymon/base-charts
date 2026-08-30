@@ -119,4 +119,16 @@ describe('aggregateRows', () => {
 		assert.equal(result.notes[0]?.[alpha]?.length, 2);
 		assert.equal(result.notes[0]?.[alpha]?.[0]?.path, 'a.md');
 	});
+
+	it('uses file names as bar-race contestants when series-by is empty', () => {
+		const dated: RawRow[] = [
+			{ xLabels: ['2024-01-01'], seriesLabels: [], y: 10, xNumeric: null, fileName: 'north' },
+			{ xLabels: ['2024-02-01'], seriesLabels: [], y: 20, xNumeric: null, fileName: 'south' },
+			{ xLabels: ['2024-02-01'], seriesLabels: [], y: 8, xNumeric: null, fileName: 'north' },
+		];
+		const result = aggregateRows(dated, settings({ chartType: 'bar-race', aggregation: 'sum' }));
+		assert.ok(result.seriesNames.includes('north'));
+		assert.ok(result.seriesNames.includes('south'));
+		assert.deepEqual(result.categories, ['2024-01-01', '2024-02-01']);
+	});
 });

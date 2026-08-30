@@ -7,7 +7,11 @@ import { aggregateRows } from './aggregate.ts';
 import {
 	buildChartOption,
 	categoryWindowHint,
+	hasDateCategories,
+	icicleLabelVisible,
 	logSafeValue,
+	marimekkoWidths,
+	sturgesBinCount,
 	treemapLabelFormatter,
 	treemapLabelLayout,
 } from './chart.ts';
@@ -439,6 +443,197 @@ describe('buildChartOption', () => {
 			}),
 			true,
 		);
+	});
+
+	it('adds leftover chart types and they produce options', () => {
+		const added = [
+			'icicle',
+			'tree',
+			'parallel',
+			'network',
+			'marimekko',
+			'bullet',
+			'slope',
+			'histogram',
+			'violin',
+			'bar-race',
+		] as const;
+		for (const type of added) {
+			assert.ok(CHART_TYPES.includes(type));
+			const option = buildChartOption(data, settings({ chartType: type }), theme, false);
+			assert.ok(Array.isArray(option.series) || Array.isArray(option.options));
+			const series = (option.series as unknown[]) ?? [];
+			const framed = (option.options as { series?: unknown[] }[] | undefined) ?? [];
+			assert.ok(series.length > 0 || framed.some((frame) => (frame.series?.length ?? 0) > 0));
+		}
+	});
+
+	it('builds icicle from the same hierarchy and hides labels on thin rects', () => {
+		const option = buildChartOption(data, settings({ chartType: 'icicle' }), theme, false);
+		const series = (option.series as { type?: string; labelLayout?: unknown; data?: unknown[] }[])[0];
+		assert.equal(series?.type, 'custom');
+		assert.equal(typeof series?.labelLayout, 'function');
+		assert.ok((series?.data?.length ?? 0) > 0);
+		assert.equal(icicleLabelVisible(12, 40), false);
+		assert.equal(icicleLabelVisible(80, 8), false);
+		assert.equal(icicleLabelVisible(80, 20), true);
+	});
+
+	it('builds a roaming tree with leaf labels', () => {
+		const option = buildChartOption(data, settings({ chartType: 'tree' }), theme, false);
+		const series = (option.series as {
+			type?: string;
+			roam?: boolean;
+			leaves?: { label?: { show?: boolean } };
+		})[0];
+		assert.equal(series?.type, 'tree');
+		assert.equal(series?.roam, true);
+		assert.equal(series?.leaves?.label?.show, true);
+	});
+
+	it('builds parallel coordinates with one series without crashing', () => {
+		const option = buildChartOption(data, settings({ chartType: 'parallel' }), theme, false);
+		assert.ok(Array.isArray(option.parallelAxis));
+		assert.equal((option.parallelAxis as unknown[]).length, data.categories.length);
+		assert.equal((option.series as { type?: string }[])[0]?.type, 'parallel');
+		assert.equal((option.series as { data?: unknown[] }[])[0]?.data?.length, 1);
+	});
+
+	it('builds a network force graph with real X to series-by links', () => {
+		const flow = aggregateRows(
+			[
+				{ xLabels: ['alpha'], seriesLabels: ['east'], y: 10, xNumeric: null, fileName: 'a' },
+				{ xLabels: ['beta'], seriesLabels: ['west'], y: 20, xNumeric: null, fileName: 'b' },
+			],
+			settings({ chartType: 'network' }),
+		);
+		const option = buildChartOption(flow, settings({ chartType: 'network' }), theme, false);
+		const series = (option.series as {
+			type?: string;
+			layout?: string;
+			links?: { source: string; target: string }[];
+		})[0];
+		assert.equal(series?.type, 'graph');
+		assert.equal(series?.layout, 'force');
+		assert.ok((series?.links?.length ?? 0) > 0);
+		assert.ok(series?.links?.some((link) => link.source === 'alpha' && link.target === 'east'));
+		const bubbles = buildChartOption(flow, settings({ chartType: 'bubbles' }), theme, false);
+		assert.equal((bubbles.series as { links?: unknown[] }[])[0]?.links?.length ?? 0, 0);
+	});
+
+	it('builds marimekko widths that sum to the full plot', () => {
+		const split = aggregateRows(
+			[
+				{ xLabels: ['alpha'], seriesLabels: ['east'], y: 25, xNumeric: null, fileName: 'a' },
+				{ xLabels: ['alpha'], seriesLabels: ['west'], y: 25, xNumeric: null, fileName: 'b' },
+				{ xLabels: ['beta'], seriesLabels: ['east'], y: 50, xNumeric: null, fileName: 'c' },
+			],
+			settings({ chartType: 'marimekko', aggregation: 'sum' }),
+		);
+		const widths = marimekkoWidths(split);
+		assert.ok(widths.length >= 2);
+		assert.ok(Math.abs(widths.reduce((sum, value) => sum + value, 0) - 1) < 1e-9);
+		const option = buildChartOption(split, settings({ chartType: 'marimekko' }), theme, false);
+		assert.equal((option.series as { type?: string }[])[0]?.type, 'custom');
+	});
+
+	it('builds a bullet bar with a Y2 target, or the overall Y mark when Y2 is empty', () => {
+		const dual = aggregateRows(rows, settings({ chartType: 'bullet', y2Property: 'note.rate' }));
+		const withTarget = buildChartOption(
+			dual,
+			settings({ chartType: 'bullet', y2Property: 'note.rate' }),
+			theme,
+			false,
+		);
+		const series = withTarget.series as { type?: string; name?: string }[];
+		assert.equal(series[0]?.type, 'bar');
+		assert.equal(series[1]?.type, 'scatter');
+		const plain = buildChartOption(data, settings({ chartType: 'bullet' }), theme, false);
+		assert.equal((plain.series as { name?: string }[])[1]?.name, 'median');
+	});
+
+	it('degrades slope to lollipop when there are fewer than two series', () => {
+		const option = buildChartOption(data, settings({ chartType: 'slope' }), theme, false);
+		const types = (option.series as { type?: string }[]).map((item) => item.type);
+		assert.ok(types.includes('bar'));
+		assert.ok(types.includes('scatter'));
+		const split = aggregateRows(
+			[
+				{ xLabels: ['alpha'], seriesLabels: ['east'], y: 10, xNumeric: null, fileName: 'a' },
+				{ xLabels: ['alpha'], seriesLabels: ['west'], y: 30, xNumeric: null, fileName: 'b' },
+				{ xLabels: ['beta'], seriesLabels: ['east'], y: 20, xNumeric: null, fileName: 'c' },
+				{ xLabels: ['beta'], seriesLabels: ['west'], y: 5, xNumeric: null, fileName: 'd' },
+			],
+			settings({ chartType: 'slope' }),
+		);
+		const slope = buildChartOption(split, settings({ chartType: 'slope' }), theme, false);
+		assert.equal((slope.series as { type?: string }[])[0]?.type, 'line');
+		assert.ok(((slope.series as unknown[]) ?? []).length >= 2);
+	});
+
+	it('bins raw Y values for histogram and violin, not aggregated medians', () => {
+		const rawRows = [
+			{ xLabels: ['topic-a'], seriesLabels: [], y: 100, xNumeric: null, fileName: 'low' },
+			{ xLabels: ['topic-a'], seriesLabels: [], y: 200, xNumeric: null, fileName: 'mid' },
+			{ xLabels: ['topic-a'], seriesLabels: [], y: 300, xNumeric: null, fileName: 'high' },
+			{ xLabels: ['topic-a'], seriesLabels: [], y: 4000, xNumeric: null, fileName: 'outlier' },
+		];
+		const raw = aggregateRows(rawRows, settings({ chartType: 'histogram', aggregation: 'median' }));
+		assert.equal(raw.values[0]?.[0], 250);
+		const histogram = buildChartOption(raw, settings({ chartType: 'histogram' }), theme, false);
+		const histData = (histogram.series as { type?: string; data?: { value?: number[] }[] }[])[0];
+		assert.equal(histData?.type, 'bar');
+		const mids = (histData?.data ?? []).map((item) => Number(item.value?.[0] ?? 0));
+		assert.ok(Math.max(...mids) > 250);
+		assert.ok(Math.max(...mids) >= 300);
+		assert.ok(sturgesBinCount(4) >= 3);
+
+		const violin = buildChartOption(
+			aggregateRows(rawRows, settings({ chartType: 'violin', aggregation: 'median' })),
+			settings({ chartType: 'violin' }),
+			theme,
+			false,
+		);
+		const violinSeries = (violin.series as { type?: string; data?: { bins?: { mid: number; count: number }[] }[] }[])[0];
+		assert.equal(violinSeries?.type, 'custom');
+		const bins = violinSeries?.data?.[0]?.bins ?? [];
+		assert.ok(bins.some((bin) => bin.mid > 250 && bin.count > 0));
+		assert.ok(bins.reduce((sum, bin) => sum + bin.count, 0) === 4);
+	});
+
+	it('degrades bar race to a ranked bar when X is not dates', () => {
+		assert.equal(hasDateCategories(['alpha', 'beta']), false);
+		const option = buildChartOption(data, settings({ chartType: 'bar-race' }), theme, false);
+		assert.equal(option.timeline, undefined);
+		assert.equal((option.series as { type?: string }[])[0]?.type, 'bar');
+	});
+
+	it('plays a bar race when X parses as dates', () => {
+		const dated = aggregateRows(
+			[
+				{ xLabels: ['2024-01-01'], seriesLabels: ['east'], y: 10, xNumeric: null, fileName: 'a' },
+				{ xLabels: ['2024-02-01'], seriesLabels: ['east'], y: 30, xNumeric: null, fileName: 'b' },
+				{ xLabels: ['2024-01-01'], seriesLabels: ['west'], y: 20, xNumeric: null, fileName: 'c' },
+				{ xLabels: ['2024-02-01'], seriesLabels: ['west'], y: 12, xNumeric: null, fileName: 'd' },
+			],
+			settings({ chartType: 'bar-race', aggregation: 'sum' }),
+		);
+		assert.equal(hasDateCategories(dated.categories), true);
+		const option = buildChartOption(dated, settings({ chartType: 'bar-race' }), theme, false);
+		assert.ok(option.timeline);
+		assert.equal((option.timeline as { autoPlay?: boolean }).autoPlay, true);
+		assert.equal((option.options as unknown[] | undefined)?.length, dated.categories.length);
+		const still = buildChartOption(dated, settings({ chartType: 'bar-race' }), theme, true);
+		assert.equal(still.animation, false);
+		assert.equal((still.timeline as { autoPlay?: boolean }).autoPlay, false);
+	});
+
+	it('still disables animation on leftover types when reduced motion is on', () => {
+		for (const type of ['icicle', 'network', 'histogram', 'violin', 'marimekko'] as const) {
+			const option = buildChartOption(data, settings({ chartType: type }), theme, true);
+			assert.equal(option.animation, false);
+			assert.equal(option.animationDuration, 0);
+		}
 	});
 });
 
