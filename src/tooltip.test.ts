@@ -109,10 +109,107 @@ describe('formatCategoryTooltip', () => {
 		assert.match(html, /north/);
 		assert.match(html, /day 12/);
 		assert.match(html, /amount 42/);
+		assert.match(html, /data-motion-note-path="notes\/north.md"/);
 		assert.equal(html.includes('motion-chart-tooltip-notes'), false);
 		assert.equal(html.includes('south'), false);
 		assert.equal(html.includes('Value'), false);
 		assert.equal(html.includes('Score'), false);
+		assert.equal(html.includes('n 0'), false);
+		assert.equal(html.includes('Median 0'), false);
+	});
+
+	it('uses the scatter point X/Y when the note is missing from aggregated buckets', () => {
+		const rows: RawRow[] = [
+			...Array.from({ length: 12 }, (_, index) => ({
+				xLabels: [`topic-${index}`],
+				seriesLabels: ['Other'],
+				y: 90_000 - index,
+				xNumeric: index,
+				fileName: `other-${index}`,
+				filePath: `notes/other-${index}.md`,
+			})),
+			{
+				xLabels: ['rare-tag'],
+				seriesLabels: ['Jeremy Hambly'],
+				y: 650_000,
+				xNumeric: 42,
+				fileName: 'Would You Be Creeped Out By This!',
+				filePath: 'notes/creeped.md',
+				title: 'Would You Be Creeped Out By This!',
+			},
+		];
+		const chartSettings = settings({
+			chartType: 'scatter',
+			xProperty: 'note.day',
+			yProperty: 'note.amount',
+			seriesProperty: 'note.channel',
+			aggregation: 'median',
+			maxCategories: 5,
+		});
+		const data = aggregateRows(rows, chartSettings);
+		const html = formatCategoryTooltip(
+			{
+				name: 'Would You Be Creeped Out By This!',
+				seriesName: 'Jeremy Hambly',
+				value: [42, 650_000],
+				data: { name: 'Would You Be Creeped Out By This!', path: 'notes/creeped.md' },
+			},
+			data,
+			chartSettings,
+		);
+		assert.match(html, /Would You Be Creeped Out By This!/);
+		assert.match(html, /Jeremy Hambly/);
+		assert.match(html, /day 42/);
+		assert.match(html, /amount 650\.0k/);
+		assert.match(html, /data-motion-note-path="notes\/creeped.md"/);
+		assert.equal(html.includes('n 0'), false);
+		assert.equal(html.includes('Median 0'), false);
+		assert.equal(html.includes('n '), false);
+		assert.equal(html.includes('Median '), false);
+		assert.equal(html.includes('Score'), false);
+		assert.equal(html.includes('Channel'), false);
+	});
+
+	it('keeps a grouped card for a line/bubble category with several notes', () => {
+		const rows: RawRow[] = [
+			{ xLabels: ['funny'], seriesLabels: [], y: 10, xNumeric: null, fileName: 'a', filePath: 'a.md' },
+			{ xLabels: ['funny'], seriesLabels: [], y: 40, xNumeric: null, fileName: 'b', filePath: 'b.md' },
+		];
+		const line = formatCategoryTooltip(
+			{ name: 'funny', value: 25 },
+			aggregateRows(rows, settings({ chartType: 'line', aggregation: 'median' })),
+			settings({ chartType: 'line', aggregation: 'median' }),
+		);
+		assert.match(line, /n 2/);
+		assert.match(line, /Median 25/);
+		assert.match(line, />a</);
+		assert.match(line, />b</);
+
+		const bubbles = formatCategoryTooltip(
+			{ name: 'funny' },
+			aggregateRows(rows, settings({ chartType: 'bubbles', aggregation: 'sum' })),
+			settings({ chartType: 'bubbles', aggregation: 'sum' }),
+		);
+		assert.match(bubbles, /n 2/);
+		assert.match(bubbles, /Sum 50/);
+	});
+
+	it('uses a single-note card for a 1:1 line or funnel mark', () => {
+		const rows: RawRow[] = [
+			{ xLabels: ['solo'], seriesLabels: [], y: 88, xNumeric: null, fileName: 'only', filePath: 'notes/only.md' },
+		];
+		const chartSettings = settings({ chartType: 'line', xProperty: 'file.name', yProperty: 'note.amount' });
+		const html = formatCategoryTooltip(
+			{ name: 'solo', value: 88 },
+			aggregateRows(rows, chartSettings),
+			chartSettings,
+		);
+		assert.match(html, /only/);
+		assert.match(html, /name solo|amount 88/);
+		assert.match(html, /amount 88/);
+		assert.equal(html.includes('n 1'), false);
+		assert.equal(html.includes('n 0'), false);
+		assert.equal(html.includes('Median 0'), false);
 	});
 
 	it('still lists group files for a categorical scatter / bar mark with one series', () => {

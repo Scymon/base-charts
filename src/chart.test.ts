@@ -373,6 +373,8 @@ describe('buildChartOption', () => {
 		assert.match(scatterHtml, /amount 42/);
 		assert.equal(scatterHtml.includes('south'), false);
 		assert.equal(scatterHtml.includes('Value'), false);
+		assert.equal(scatterHtml.includes('n 0'), false);
+		assert.equal(scatterHtml.includes('Median 0'), false);
 	});
 
 	it('maps a clicked category back to at least one file', () => {
@@ -380,6 +382,35 @@ describe('buildChartOption', () => {
 		assert.ok(mapped.length >= 1);
 		assert.equal(mapped[0]?.path, 'notes/south.md');
 		assert.equal(pickOpenNote(mapped)?.path, 'notes/south.md');
+	});
+
+	it('maps a scatter point title back to its file when the X bucket was capped', () => {
+		const rows = [
+			...Array.from({ length: 12 }, (_, index) => ({
+				xLabels: [`topic-${index}`],
+				seriesLabels: ['Other'],
+				y: 90_000 - index,
+				xNumeric: index,
+				fileName: `other-${index}`,
+				filePath: `notes/other-${index}.md`,
+			})),
+			{
+				xLabels: ['rare-tag'],
+				seriesLabels: ['Jeremy Hambly'],
+				y: 650_000,
+				xNumeric: 42,
+				fileName: 'Would You Be Creeped Out By This!',
+				filePath: 'notes/creeped.md',
+				title: 'Would You Be Creeped Out By This!',
+			},
+		];
+		const scatterData = aggregateRows(
+			rows,
+			settings({ chartType: 'scatter', seriesProperty: 'note.channel', maxCategories: 5 }),
+		);
+		const mapped = resolveClickNotes(scatterData, { name: 'Would You Be Creeped Out By This!' });
+		assert.equal(mapped[0]?.path, 'notes/creeped.md');
+		assert.equal(pickOpenNote(mapped)?.path, 'notes/creeped.md');
 	});
 
 	it('builds lollipop, dumbbell, and chord options', () => {
