@@ -236,12 +236,6 @@ function categoryAxisLabel(
 		interval: (index: number) => axisLabelShowsIndex(plan, index),
 		hideOverlap: false,
 		rotate,
-		overflow: 'none' as const,
-		showMinLabel: true,
-		showMaxLabel: true,
-		...(placement === 'bottom' && rotate
-			? { alignMinLabel: 'center' as const, alignMaxLabel: 'center' as const }
-			: {}),
 	};
 }
 
@@ -265,7 +259,7 @@ export function categoryAxisPad(categories: string[], placement: 'bottom' | 'lef
 		top: 40,
 		right: Math.min(64, Math.max(28, jut)),
 		bottom: Math.min(176, Math.max(100, depth)),
-		left: Math.min(64, Math.max(28, jut)),
+		left: 16,
 	};
 }
 
@@ -1514,15 +1508,9 @@ export function buildChartOption(
 	const zoom = dataZoomOption(data, settings, theme, reduceMotion, horizontal);
 	const extraRight = combo && data.hasY2 ? 48 : 0;
 	const percents = percent ? toPercents(data) : null;
-	const onEdge =
-		settings.chartType === 'line' ||
-		settings.chartType === 'line-step' ||
-		settings.chartType === 'area' ||
-		settings.chartType === 'area-stacked';
 	const categoryAxis = {
 		type: 'category' as const,
 		data: data.categories,
-		...(onEdge ? { boundaryGap: false } : {}),
 		...axisCommon(theme, settings.showGrid && !horizontal),
 		axisLabel: categoryAxisLabel(theme, horizontal ? 'left' : 'bottom', data.categories),
 	};
