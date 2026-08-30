@@ -153,6 +153,16 @@ describe('fillTimeCategories', () => {
 		assert.ok(filled.includes('2026-W22'));
 		assert.ok(filled.includes('2026-W28'));
 	});
+
+	it('does not invent the 83-week 2025-W22…2026-W52 tail seen on the live stacked area', () => {
+		const filled = fillTimeCategories(['2025-W22', '2026-W35', '2026-W52'], NOW_W35);
+		assert.equal(filled[0], '2025-W22');
+		assert.equal(filled[filled.length - 1], '2026-W35');
+		assert.equal(filled.includes('2026-W36'), false);
+		assert.equal(filled.includes('2026-W52'), false);
+		assert.ok(filled.length < 83);
+		assert.ok(filled.includes('2026-W01'));
+	});
 });
 
 describe('inferUnspecifiedSort', () => {

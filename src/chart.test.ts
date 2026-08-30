@@ -944,8 +944,9 @@ describe('buildChartOption', () => {
 	});
 
 	it('puts a bottom slider on a dense calendar-day area chart', () => {
+		const now = Date.UTC(2026, 7, 30);
 		const days = Array.from({ length: 36 }, (_, index) => {
-			const date = new Date(Date.UTC(2026, 7, 1 + index));
+			const date = new Date(Date.UTC(2026, 5, 1 + index));
 			const label = date.toISOString().slice(0, 10);
 			return {
 				xLabels: [label],
@@ -958,10 +959,11 @@ describe('buildChartOption', () => {
 		const data = aggregateRows(
 			days,
 			settings({ chartType: 'area', aggregation: 'median', sort: 'time-desc', maxCategories: 36 }),
+			{ nowMs: now },
 		);
 		assert.equal(data.categories.length, 36);
-		assert.equal(data.categories[0], '2026-09-05');
-		assert.equal(data.categories[35], '2026-08-01');
+		assert.equal(data.categories[0], '2026-07-06');
+		assert.equal(data.categories[35], '2026-06-01');
 		const option = buildChartOption(
 			data,
 			settings({ chartType: 'area', sort: 'time-desc', maxCategories: 36 }),
