@@ -139,14 +139,20 @@ export interface ChartTheme {
 export interface ClickPayload {
 	name?: string;
 	seriesName?: string;
+	componentType?: string;
+	dataIndex?: number;
+	value?: unknown;
 	dataType?: string;
 	treePathInfo?: { name?: string }[];
-	event?: { event?: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean } };
+	event?: { event?: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; offsetX?: number; offsetY?: number } };
 	data?: {
 		name?: string;
 		source?: string;
 		target?: string;
 		path?: string;
 		children?: unknown[];
+		kind?: string;
+		skipStart?: number;
+		skipEnd?: number;
 	};
 }
