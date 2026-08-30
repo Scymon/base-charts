@@ -583,7 +583,8 @@ describe('buildChartOption', () => {
 		assert.equal(slider?.fillerColor, colorAlpha(theme.accent, 0.16));
 		assert.equal(slider?.handleStyle?.color, colorAlpha(theme.accent, 0.5));
 		const fade = slider?.dataBackground?.areaStyle?.color?.colorStops ?? [];
-		assert.equal(fade[0]?.color, colorAlpha(theme.accent, 0));
+		assert.equal(fade[0]?.color, colorAlpha(theme.accent, 0.28));
+		assert.equal(fade[1]?.color, colorAlpha(theme.accent, 0));
 		assert.ok((fade[1]?.offset ?? 0) > (fade[0]?.offset ?? 1));
 
 		const sideways = buildChartOption(

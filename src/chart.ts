@@ -323,10 +323,11 @@ export function sliderAreaGradient(color: string, topAlpha: number) {
 		x2: 0,
 		y2: 1,
 		colorStops: [
-			// Local y=0 is the baseline; the slider group flips scaleY so this
-			// becomes the visual bottom. Transparent there, accent at the peak.
-			{ offset: 0, color: colorAlpha(color, 0) },
-			{ offset: 1, color: colorAlpha(color, topAlpha) },
+			// zrender builds this gradient in the element's bounding box after
+			// the slider group's scaleY flip, so offset 0 is the visual top
+			// (waveform ridge) and offset 1 is the baseline.
+			{ offset: 0, color: colorAlpha(color, topAlpha) },
+			{ offset: 1, color: colorAlpha(color, 0) },
 		],
 	};
 }
