@@ -120,6 +120,39 @@ describe('aggregateRows', () => {
 		assert.equal(result.notes[0]?.[alpha]?.[0]?.path, 'a.md');
 	});
 
+	it('skips empty series-by labels instead of inventing a Value series', () => {
+		const mixed: RawRow[] = [
+			{ xLabels: ['alpha'], seriesLabels: ['east'], y: 10, xNumeric: null, fileName: 'a' },
+			{ xLabels: ['beta'], seriesLabels: [], y: 20, xNumeric: null, fileName: 'b' },
+			{ xLabels: ['alpha'], seriesLabels: ['west'], y: 30, xNumeric: null, fileName: 'c' },
+			{ xLabels: ['gamma'], seriesLabels: ['  '], y: 40, xNumeric: null, fileName: 'd' },
+		];
+		const result = aggregateRows(mixed, settings({ seriesProperty: 'note.group', aggregation: 'sum' }));
+		assert.deepEqual([...result.seriesNames].sort(), ['east', 'west']);
+		assert.equal(result.seriesNames.includes('Value'), false);
+		assert.equal(result.categories.includes('beta'), false);
+		assert.equal(result.categories.includes('gamma'), false);
+		assert.ok(result.categories.includes('alpha'));
+	});
+
+	it('does not label a single unnamed series as Value when series-by is unset', () => {
+		const result = aggregateRows(rows, settings());
+		assert.equal(result.values.length, 1);
+		assert.equal(result.seriesNames.includes('Value'), false);
+	});
+
+	it('keeps a real category named value that came from xLabels', () => {
+		const tagged: RawRow[] = [
+			{ xLabels: ['value'], seriesLabels: [], y: 12, xNumeric: null, fileName: 'one' },
+			{ xLabels: ['topic'], seriesLabels: [], y: 8, xNumeric: null, fileName: 'two' },
+		];
+		const result = aggregateRows(tagged, settings({ aggregation: 'sum', sort: 'label-asc' }));
+		assert.ok(result.categories.includes('value'));
+		assert.equal(result.seriesNames.includes('Value'), false);
+		const index = result.categories.indexOf('value');
+		assert.equal(result.values[0]?.[index], 12);
+	});
+
 	it('uses file names as bar-race contestants when series-by is empty', () => {
 		const dated: RawRow[] = [
 			{ xLabels: ['2024-01-01'], seriesLabels: [], y: 10, xNumeric: null, fileName: 'north' },

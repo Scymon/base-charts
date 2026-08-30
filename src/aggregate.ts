@@ -64,6 +64,18 @@ function pushUnique(list: string[], value: string): void {
 	if (!list.includes(value)) list.push(value);
 }
 
+function hasSeriesLabel(label: string): boolean {
+	return label.trim() !== '';
+}
+
+function rowSeriesLabels(row: RawRow, seriesByConfigured: boolean, chartType: ChartSettings['chartType']): string[] {
+	const labeled = row.seriesLabels.map((label) => label.trim()).filter(hasSeriesLabel);
+	if (labeled.length > 0) return labeled;
+	if (chartType === 'bar-race') return [row.fileName];
+	if (seriesByConfigured) return [];
+	return [''];
+}
+
 function noteTitle(row: RawRow): string {
 	return row.title?.trim() || row.fileName;
 }
@@ -112,6 +124,8 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 	const rawPoints: ScatterPoint[] = [];
 	const overallValues: number[] = [];
 	let numericXCount = 0;
+	const seriesByConfigured =
+		Boolean(settings.seriesProperty) || rows.some((row) => row.seriesLabels.some(hasSeriesLabel));
 
 	for (const row of rows) {
 		const yMissing = row.y == null;
@@ -120,12 +134,7 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 		}
 
 		const xLabels = row.xLabels.length > 0 ? row.xLabels : ['(empty)'];
-		const seriesLabels =
-			row.seriesLabels.length > 0
-				? row.seriesLabels
-				: settings.chartType === 'bar-race'
-					? [row.fileName]
-					: [''];
+		const seriesLabels = rowSeriesLabels(row, seriesByConfigured, settings.chartType);
 		const y = row.y ?? 0;
 
 		if (row.xNumeric != null && row.y != null) {
@@ -135,7 +144,7 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 				rawPoints.push({
 					x: row.xNumeric,
 					y: row.y,
-					series: series || 'Value',
+					series,
 					name: noteTitle(row),
 					path: row.filePath || row.fileName,
 				});
@@ -169,10 +178,10 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 	const seriesNames: string[] = [];
 	for (const bucket of buckets.values()) {
 		pushUnique(categories, bucket.x);
-		pushUnique(seriesNames, bucket.series || 'Value');
+		if (hasSeriesLabel(bucket.series)) pushUnique(seriesNames, bucket.series);
 	}
 
-	let names = seriesNames.length > 0 ? seriesNames : ['Value'];
+	let names = seriesNames.length > 0 ? seriesNames : [''];
 	const valueMap = new Map<string, number>();
 	const rawMap = new Map<string, number[]>();
 	const y2Map = new Map<string, number>();
@@ -180,7 +189,7 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 	const noteMap = new Map<string, CategoryNote[]>();
 	let hasY2 = false;
 	for (const bucket of buckets.values()) {
-		const series = bucket.series || 'Value';
+		const series = hasSeriesLabel(bucket.series) ? bucket.series : '';
 		const key = `${series}\0${bucket.x}`;
 		valueMap.set(key, aggregateNumbers(bucket.values, settings.aggregation));
 		rawMap.set(key, bucket.values);
