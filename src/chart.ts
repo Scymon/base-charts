@@ -1,6 +1,6 @@
 import type { EChartsOption, SeriesOption } from 'echarts';
 import { binCounts, boxFive } from './aggregate.ts';
-import { formatNumber } from './format.ts';
+import { formatAxisTick, formatNumber } from './format.ts';
 import { formatCategoryTooltip } from './tooltip.ts';
 import type { AggregatedChart, ChartSettings, ChartTheme } from './types.ts';
 
@@ -185,6 +185,10 @@ function valueAxisOption(theme: ChartTheme, showGrid: boolean, logY: boolean, ex
 		type: logY ? ('log' as const) : ('value' as const),
 		min: logY ? ('dataMin' as const) : undefined,
 		...axisCommon(theme, showGrid),
+		axisLabel: {
+			color: theme.muted,
+			formatter: formatAxisTick,
+		},
 		...extra,
 	};
 }
@@ -904,7 +908,10 @@ export function buildChartOption(
 					valueAxisOption(theme, false, false, {
 						position: 'right',
 						alignTicks: true,
-						axisLabel: { color: colors[1] ?? theme.muted },
+						axisLabel: {
+							color: colors[1] ?? theme.muted,
+							formatter: formatAxisTick,
+						},
 					}),
 				]
 			: horizontal
