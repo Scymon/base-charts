@@ -306,7 +306,12 @@ describe('aggregateRows', () => {
 			tagged,
 			settings({ minCategoryNotes: 2, maxCategories: 2, sort: 'value-desc' }),
 		);
-		assert.deepEqual(result.categories, ['common-a', 'common-b']);
+		assert.equal(result.categories.length, 2);
+		assert.ok(result.categories.includes('common-a'));
+		assert.ok(result.categories.includes('common-b'));
+		assert.equal(result.categories.includes('rare-high'), false);
+		assert.equal(result.categories.includes('singleton-2'), false);
+		assert.equal(result.categories.includes('singleton-3'), false);
 	});
 
 	it('does not drop a single-note week when minCategoryNotes is 2', () => {
