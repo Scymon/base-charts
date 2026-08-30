@@ -4,10 +4,13 @@ export const CHART_TYPES = [
 	'bar',
 	'bar-horizontal',
 	'bar-stacked',
+	'bar-percent',
 	'combo',
 	'lollipop',
 	'line',
+	'line-step',
 	'area',
+	'area-stacked',
 	'pie',
 	'doughnut',
 	'rose',
@@ -26,6 +29,9 @@ export const CHART_TYPES = [
 	'waterfall',
 	'sankey',
 	'chord',
+	'bar-polar',
+	'streamgraph',
+	'waffle',
 ] as const;
 
 export type ChartType = (typeof CHART_TYPES)[number];
@@ -109,6 +115,7 @@ export interface AggregatedChart {
 
 export interface ChartTheme {
 	background: string;
+	primary: string;
 	panel: string;
 	text: string;
 	muted: string;
@@ -121,9 +128,12 @@ export interface ClickPayload {
 	name?: string;
 	seriesName?: string;
 	dataType?: string;
+	treePathInfo?: { name?: string }[];
+	event?: { event?: { ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean } };
 	data?: {
 		name?: string;
 		source?: string;
 		target?: string;
+		children?: unknown[];
 	};
 }

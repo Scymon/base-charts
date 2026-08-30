@@ -34,6 +34,7 @@ export function readChartTheme(el: HTMLElement): ChartTheme {
 
 	return {
 		background: 'transparent',
+		primary: cssVar(el, '--background-primary', '#1e1e1e'),
 		panel: cssVar(el, '--background-secondary', '#1e1e1e'),
 		text: cssVar(el, '--text-normal', '#dcddde'),
 		muted: cssVar(el, '--text-muted', '#999'),

@@ -1,12 +1,22 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { aggregateRows } from './aggregate.ts';
-import { buildChartOption, logSafeValue } from './chart.ts';
-import { pickOpenNote, resolveClickNotes } from './click.ts';
-import { DEFAULT_EXCLUDED_TAGS, type ChartSettings, type ChartTheme, type RawRow } from './types.ts';
+import {
+	buildChartOption,
+	categoryWindowHint,
+	logSafeValue,
+	treemapLabelFormatter,
+	treemapLabelLayout,
+} from './chart.ts';
+import { pickOpenNote, resolveClickNotes, shouldOpenNotesOnClick } from './click.ts';
+import { CHART_TYPES, DEFAULT_EXCLUDED_TAGS, type ChartSettings, type ChartTheme, type RawRow } from './types.ts';
 
 const theme: ChartTheme = {
 	background: 'transparent',
+	primary: '#1e1e1e',
 	panel: '#1e1e1e',
 	text: '#ddd',
 	muted: '#999',
@@ -268,7 +278,7 @@ describe('buildChartOption', () => {
 		assert.ok((series?.links?.length ?? 0) > 0);
 	});
 
-	it('adds dataZoom on dense cartesian charts and skips zoom animation when reduced', () => {
+	it('adds inside dataZoom on dense cartesian charts without a slider', () => {
 		const labels = Array.from({ length: 20 }, (_, index) => `topic-${index}`);
 		const dense = aggregateRows(
 			labels.map((label, index) => ({
@@ -282,12 +292,165 @@ describe('buildChartOption', () => {
 		);
 		const moving = buildChartOption(dense, settings({ maxCategories: 40 }), theme, false);
 		const still = buildChartOption(dense, settings({ maxCategories: 40 }), theme, true);
-		const zooms = moving.dataZoom as { type?: string; animation?: boolean }[];
+		const zooms = moving.dataZoom as { type?: string }[];
 		assert.ok(Array.isArray(zooms));
 		assert.ok(zooms.some((item) => item.type === 'inside'));
-		assert.ok(zooms.some((item) => item.type === 'slider'));
+		assert.equal(zooms.some((item) => item.type === 'slider'), false);
+		const grid = moving.grid as { bottom?: number; containLabel?: boolean };
+		assert.ok((grid.bottom ?? 0) >= 100);
+		assert.equal(grid.containLabel, true);
 		assert.equal(still.animation, false);
-		const stillSlider = (still.dataZoom as { type?: string; animation?: boolean }[]).find((item) => item.type === 'slider');
-		assert.equal(stillSlider?.animation, false);
+		assert.equal(categoryWindowHint(16, 20), '16 of 20 categories');
+		assert.equal(categoryWindowHint(8, 8), null);
+	});
+
+	it('builds a finished treemap with roam, breadcrumb, and label overflow handling', () => {
+		const option = buildChartOption(data, settings({ chartType: 'treemap' }), theme, false);
+		const series = (option.series as {
+			type?: string;
+			roam?: boolean | string;
+			nodeClick?: string | boolean;
+			squareRatio?: number;
+			leafDepth?: number;
+			colorMappingBy?: string;
+			breadcrumb?: { show?: boolean };
+			label?: { overflow?: string; formatter?: unknown };
+			labelLayout?: unknown;
+			levels?: { upperLabel?: { show?: boolean } }[];
+		}[])[0];
+		assert.equal(series?.type, 'treemap');
+		assert.equal(series?.roam, true);
+		assert.equal(series?.nodeClick, 'zoomToNode');
+		assert.equal(series?.squareRatio, 1);
+		assert.equal(series?.leafDepth, 1);
+		assert.equal(series?.colorMappingBy, 'value');
+		assert.equal(series?.breadcrumb?.show, true);
+		assert.equal(series?.label?.overflow, 'truncate');
+		assert.equal(typeof series?.label?.formatter, 'function');
+		assert.equal(typeof series?.labelLayout, 'function');
+		assert.ok(option.visualMap);
+		assert.equal(option.animation, true);
+		const tiny = treemapLabelLayout({ rect: { width: 12, height: 10 } });
+		assert.equal(tiny.fontSize, 0);
+		const roomy = treemapLabelLayout({ rect: { width: 120, height: 48 } });
+		assert.ok((roomy.fontSize ?? 0) >= 11);
+		assert.equal(treemapLabelFormatter({ name: 'alpha', value: 10 }, 100), 'alpha');
+		assert.match(treemapLabelFormatter({ name: 'beta', value: 4000 }, 100), /beta/);
+		assert.match(treemapLabelFormatter({ name: 'beta', value: 4000 }, 100), /4\.0k|4000/);
+	});
+
+	it('shows upper labels when series-by nests treemap children', () => {
+		const nested = aggregateRows(
+			[
+				{ xLabels: ['alpha'], seriesLabels: ['east'], y: 10, xNumeric: null, fileName: 'a' },
+				{ xLabels: ['beta'], seriesLabels: ['west'], y: 20, xNumeric: null, fileName: 'b' },
+			],
+			settings({ chartType: 'treemap' }),
+		);
+		const option = buildChartOption(nested, settings({ chartType: 'treemap' }), theme, false);
+		const series = (option.series as {
+			leafDepth?: number;
+			levels?: { upperLabel?: { show?: boolean } }[];
+		}[])[0];
+		assert.equal(series?.leafDepth, 2);
+		assert.equal(series?.levels?.[0]?.upperLabel?.show, true);
+	});
+
+	it('gives sunburst a min-angle and overflow pass', () => {
+		const option = buildChartOption(data, settings({ chartType: 'sunburst' }), theme, false);
+		const series = (option.series as { label?: { minAngle?: number; overflow?: string } }[])[0];
+		assert.ok((series?.label?.minAngle ?? 0) >= 4);
+		assert.equal(series?.label?.overflow, 'truncate');
+	});
+
+	it('adds the new chart types and they produce options', () => {
+		const added = ['area-stacked', 'bar-percent', 'line-step', 'bar-polar', 'streamgraph', 'waffle'] as const;
+		for (const type of added) {
+			assert.ok(CHART_TYPES.includes(type));
+			const option = buildChartOption(data, settings({ chartType: type }), theme, false);
+			assert.ok(Array.isArray(option.series));
+			assert.ok(((option.series as unknown[]) ?? []).length > 0);
+		}
+		const stackedArea = buildChartOption(data, settings({ chartType: 'area-stacked' }), theme, false);
+		assert.equal((stackedArea.series as { type?: string; stack?: string; areaStyle?: unknown }[])[0]?.type, 'line');
+		assert.equal((stackedArea.series as { stack?: string }[])[0]?.stack, 'total');
+		assert.ok((stackedArea.series as { areaStyle?: unknown }[])[0]?.areaStyle);
+
+		const percent = buildChartOption(
+			aggregateRows(
+				[
+					{ xLabels: ['alpha'], seriesLabels: ['east'], y: 25, xNumeric: null, fileName: 'a' },
+					{ xLabels: ['alpha'], seriesLabels: ['west'], y: 75, xNumeric: null, fileName: 'b' },
+				],
+				settings({ chartType: 'bar-percent' }),
+			),
+			settings({ chartType: 'bar-percent' }),
+			theme,
+			false,
+		);
+		assert.equal((percent.series as { type?: string; stack?: string }[])[0]?.type, 'bar');
+		assert.equal((percent.series as { stack?: string }[])[0]?.stack, 'total');
+		assert.equal((percent.yAxis as { max?: number }).max, 100);
+
+		const step = buildChartOption(data, settings({ chartType: 'line-step' }), theme, false);
+		assert.equal((step.series as { type?: string; step?: string }[])[0]?.type, 'line');
+		assert.equal((step.series as { step?: string }[])[0]?.step, 'middle');
+
+		const polar = buildChartOption(data, settings({ chartType: 'bar-polar' }), theme, false);
+		assert.equal((polar.series as { coordinateSystem?: string }[])[0]?.coordinateSystem, 'polar');
+
+		const stream = buildChartOption(data, settings({ chartType: 'streamgraph' }), theme, false);
+		assert.equal((stream.series as { type?: string }[])[0]?.type, 'themeRiver');
+
+		const waffle = buildChartOption(data, settings({ chartType: 'waffle' }), theme, false);
+		assert.equal((waffle.series as { type?: string }[])[0]?.type, 'custom');
+		assert.ok(((waffle.series as { data?: unknown[] }[])[0]?.data?.length ?? 0) > 0);
+	});
+
+	it('still disables animation on new types when reduced motion is on', () => {
+		const option = buildChartOption(data, settings({ chartType: 'waffle' }), theme, true);
+		assert.equal(option.animation, false);
+		assert.equal(option.animationDuration, 0);
+	});
+
+	it('keeps combo tick format, log Y, and category interval settings', () => {
+		const dual = aggregateRows(rows, settings({ chartType: 'combo', y2Property: 'note.rate' }));
+		const combo = buildChartOption(dual, settings({ chartType: 'combo', y2Property: 'note.rate' }), theme, false);
+		const axes = combo.yAxis as { axisLabel?: { formatter?: unknown } }[];
+		assert.equal(typeof axes[0]?.axisLabel?.formatter, 'function');
+		assert.equal(typeof axes[1]?.axisLabel?.formatter, 'function');
+		const bar = buildChartOption(data, settings(), theme, false);
+		const xAxis = bar.xAxis as { axisLabel?: { interval?: number; hideOverlap?: boolean } };
+		assert.equal(xAxis.axisLabel?.interval, 0);
+		assert.equal(xAxis.axisLabel?.hideOverlap, false);
+	});
+
+	it('opens notes on a treemap leaf but not an un-modified parent zoom click', () => {
+		assert.equal(shouldOpenNotesOnClick({ name: 'alpha', data: { name: 'alpha' } }), true);
+		assert.equal(
+			shouldOpenNotesOnClick({ name: 'east', data: { name: 'east', children: [{ name: 'alpha' }] } }),
+			false,
+		);
+		assert.equal(
+			shouldOpenNotesOnClick({
+				name: 'east',
+				data: { name: 'east', children: [{ name: 'alpha' }] },
+				event: { event: { ctrlKey: true, metaKey: false, altKey: false } },
+			}),
+			true,
+		);
+	});
+});
+
+describe('chart chrome css', () => {
+	it('clips the view and canvas so the pane never gets a native scrollbar', () => {
+		const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'styles.css'), 'utf8');
+		assert.match(css, /\.motion-chart-view\s*\{[^}]*overflow:\s*hidden/s);
+		assert.match(css, /\.motion-chart-canvas\s*\{[^}]*overflow:\s*hidden/s);
+		assert.match(css, /\.motion-chart-view\s*\{[^}]*width:\s*100%/s);
+		assert.match(css, /\.motion-chart-canvas\s*\{[^}]*width:\s*100%/s);
+		assert.match(css, /\.motion-chart-canvas\s*\{[^}]*height:\s*100%/s);
+		assert.match(css, /\.motion-chart-view\s*\{[^}]*box-sizing:\s*border-box/s);
+		assert.match(css, /\.motion-chart-canvas\s*\{[^}]*box-sizing:\s*border-box/s);
 	});
 });

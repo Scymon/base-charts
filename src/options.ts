@@ -6,10 +6,13 @@ const CHART_TYPE_LABELS: Record<ChartType, string> = {
 	bar: 'Bar',
 	'bar-horizontal': 'Horizontal bar',
 	'bar-stacked': 'Stacked bar',
+	'bar-percent': 'Percent stacked bar',
 	combo: 'Combo',
 	lollipop: 'Lollipop',
 	line: 'Line',
+	'line-step': 'Step line',
 	area: 'Area',
+	'area-stacked': 'Stacked area',
 	pie: 'Pie',
 	doughnut: 'Doughnut',
 	rose: 'Nightingale',
@@ -28,6 +31,9 @@ const CHART_TYPE_LABELS: Record<ChartType, string> = {
 	waterfall: 'Waterfall',
 	sankey: 'Sankey',
 	chord: 'Chord',
+	'bar-polar': 'Polar bar',
+	streamgraph: 'Streamgraph',
+	waffle: 'Waffle',
 };
 
 export function viewOptions(config: BasesViewConfig): BasesAllOptions[] {
