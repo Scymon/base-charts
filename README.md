@@ -34,7 +34,7 @@ For development, you can instead clone or symlink this folder into `.obsidian/pl
 3. Change the layout to **Motion Chart**.
 4. Still in that view menu, set chart type, X-axis, Y-axis, and aggregation. You can switch types without leaving the base; the same dataset morphs between layouts.
 
-Charts stagger in (bars, slices, and points cascade), morph when you change type, and animate again when filters or data change. Hover scales the mark slightly. The plugin respects `prefers-reduced-motion` and turns all of that off.
+Charts stagger in (bars, slices, and points cascade), morph when you change type, and animate again when filters or data change. Hover scales the mark slightly. Hover a grouped mark (a bar, box, or stacked segment) to list every note in that bucket — n, the configured aggregation, min–max, and each file with its Y value. Scroll the card when the list is long; click a row to open that note. A single-note mark (scatter point) still shows that file and its X/Y fields. The plugin respects `prefers-reduced-motion` and turns all of that off.
 
 Any base with a **category** (text, list, or date) and a **number** works. Pick those two properties; nothing else is assumed.
 
@@ -48,7 +48,7 @@ Any base with a **category** (text, list, or date) and a **number** works. Pick 
 4. Set **Aggregation** to **Median** or **Average** when a few large numbers would dominate a sum.
 5. Set **Chart type** to **Bar**. Switch to **Lollipop** when the category list is long, **Boxplot** or **Dumbbell** for the raw spread in each category, **Combo** for a second metric on Y2, or **Log Y** when the range is wide. **Icicle** and **tree** nest the same hierarchy as treemap. **Histogram** and **violin** bin the raw Y values. **Bar race** plays through time when X looks like dates; otherwise it is a ranked bar.
 
-Click a bar, slice, box, combo bar, or sankey node to open a note from that category. One match opens immediately; several open the highest-Y note and list the other titles.
+Click a bar, slice, box, combo bar, or sankey node to open a note from that category. One match opens immediately; several open the highest-Y note and list the other titles. Hover already lists every file in the group.
 
 ### Optional: Shorts.base
 

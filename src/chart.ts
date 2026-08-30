@@ -282,10 +282,14 @@ function tooltipBase(theme: ChartTheme) {
 	return {
 		trigger: 'axis' as const,
 		confine: true,
+		enterable: true,
+		hideDelay: 280,
+		className: 'motion-chart-echarts-tooltip',
 		backgroundColor: theme.panel,
 		borderColor: theme.border,
 		textStyle: { color: theme.text },
-		extraCssText: 'max-width:min(280px,80%);max-height:40%;overflow:auto;',
+		extraCssText:
+			'max-width:min(380px,88%);padding:10px 12px;white-space:normal;pointer-events:auto;',
 	};
 }
 
@@ -657,7 +661,7 @@ export function buildChartOption(
 			...anim,
 			backgroundColor: theme.background,
 			color: colors,
-			tooltip: { ...tooltipBase(theme), trigger: 'item' },
+			tooltip: categoryTooltip(theme, data, settings, 'item'),
 			series: [
 				{
 					type: 'sankey',
@@ -949,12 +953,7 @@ export function buildChartOption(
 			backgroundColor: theme.background,
 			color: colors,
 			legend,
-			tooltip: {
-				...tooltipBase(theme),
-				trigger: 'item',
-				formatter: (params: unknown) =>
-					`${formatBoxTooltip(params)}<br/>${formatCategoryTooltip(params, data, settings)}`,
-			},
+			tooltip: categoryTooltip(theme, data, settings, 'item'),
 			grid: cartesianGrid(false, data.categories),
 			dataZoom: zoom.dataZoom,
 			xAxis: {
@@ -1095,7 +1094,7 @@ export function buildChartOption(
 			backgroundColor: theme.background,
 			color: colors,
 			legend,
-			tooltip: { ...tooltipBase(theme), trigger: 'item' },
+			tooltip: categoryTooltip(theme, data, settings, 'item'),
 			grid: cartesianGrid(false, data.categories),
 			dataZoom: zoom.dataZoom,
 			xAxis: {
@@ -1116,6 +1115,7 @@ export function buildChartOption(
 					.map((point) => ({
 						value: [point.x, point.y],
 						name: point.name,
+						path: point.path,
 					})),
 				...motion(reduceMotion, name),
 			})),
@@ -2078,21 +2078,6 @@ function waffleCells(categories: string[], totals: number[], colors: string[]) {
 		}
 	});
 	return cells;
-}
-
-function formatBoxTooltip(params: unknown): string {
-	const item = params as { name?: string; seriesName?: string; value?: number[] };
-	const value = item.value ?? [];
-	const name = item.name ?? '';
-	const series = item.seriesName ? `${item.seriesName}<br/>` : '';
-	return [
-		`${series}<b>${name}</b>`,
-		`Max ${formatNumber(value[5] ?? value[4] ?? 0)}`,
-		`P75 ${formatNumber(value[4] ?? value[3] ?? 0)}`,
-		`Median ${formatNumber(value[3] ?? value[2] ?? 0)}`,
-		`P25 ${formatNumber(value[2] ?? value[1] ?? 0)}`,
-		`Min ${formatNumber(value[1] ?? value[0] ?? 0)}`,
-	].join('<br/>');
 }
 
 export { formatNumber };

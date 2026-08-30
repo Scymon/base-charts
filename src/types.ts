@@ -144,6 +144,7 @@ export interface ClickPayload {
 		name?: string;
 		source?: string;
 		target?: string;
+		path?: string;
 		children?: unknown[];
 	};
 }

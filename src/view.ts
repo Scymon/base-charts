@@ -51,6 +51,7 @@ import {
 	ZOOM_AFTER,
 } from './chart.ts';
 import { pickOpenNote, resolveClickNotes, shouldOpenNotesOnClick } from './click.ts';
+import { notePathFromTarget } from './tooltip.ts';
 import { prefersReducedMotion, readChartTheme } from './theme.ts';
 import {
 	AGGREGATIONS,
@@ -142,6 +143,19 @@ export class MotionChartView extends BasesView {
 		this.registerDomEvent(document, 'pointerdown', (event) => {
 			if (!this.notesEl.contains(event.target as Node)) this.hideNotes();
 		});
+		this.registerDomEvent(
+			this.rootEl,
+			'click',
+			(event) => {
+				const path = notePathFromTarget(event.target);
+				if (!path) return;
+				event.preventDefault();
+				event.stopPropagation();
+				const named = this.lastData?.notes.flat(2).find((note) => note.path === path);
+				void this.openNote(named ?? { name: '', path, y: 0 });
+			},
+			true,
+		);
 	}
 
 	onunload(): void {

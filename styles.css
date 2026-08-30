@@ -91,3 +91,73 @@
 .motion-chart-notes-item:hover {
 	background: var(--background-modifier-hover);
 }
+
+.motion-chart-echarts-tooltip {
+	white-space: normal;
+}
+
+.motion-chart-tooltip {
+	min-width: 160px;
+	max-width: 360px;
+	font-size: 12px;
+	line-height: 1.4;
+	white-space: normal;
+}
+
+.motion-chart-tooltip-title {
+	margin-bottom: 4px;
+	font-weight: 600;
+	white-space: normal;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+
+.motion-chart-tooltip-stat {
+	color: var(--text-muted, #999);
+}
+
+.motion-chart-tooltip-notes {
+	max-height: 280px;
+	margin-top: 8px;
+	overflow-x: hidden;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+}
+
+.motion-chart-tooltip-note {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 10px;
+	width: 100%;
+	margin: 0;
+	padding: 4px 2px;
+	border: none;
+	border-radius: var(--radius-s, 4px);
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	text-align: left;
+}
+
+.motion-chart-tooltip-note[data-motion-note-path] {
+	cursor: pointer;
+}
+
+.motion-chart-tooltip-note:hover {
+	background: var(--background-modifier-hover, rgba(255, 255, 255, 0.06));
+}
+
+.motion-chart-tooltip-note-name {
+	flex: 1 1 auto;
+	min-width: 0;
+	white-space: normal;
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+
+.motion-chart-tooltip-note-value {
+	flex: 0 0 auto;
+	color: var(--text-muted, #999);
+	font-variant-numeric: tabular-nums;
+}
