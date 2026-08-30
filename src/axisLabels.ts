@@ -147,6 +147,39 @@ export function axisLabelShowsIndex(plan: AxisLabelPlan, index: number): boolean
 	return plan.shown.includes(index);
 }
 
+/** Planned date ticks plus one representative index per skipped run. */
+export function axisLabelShowsTick(plan: AxisLabelPlan, index: number): boolean {
+	return axisLabelShowsIndex(plan, index) || plan.gaps.some((gap) => gap.index === index);
+}
+
+/** Real category name on shown dates; `'...'` on the gap’s representative tick. */
+export function formatCategoryAxisTick(plan: AxisLabelPlan, index: number, value: string): string {
+	if (plan.gaps.some((gap) => gap.index === index)) return AXIS_ELLIPSIS_LABEL;
+	return value;
+}
+
+export function gapForTickIndex(plan: AxisLabelPlan, index: number): AxisLabelGap | undefined {
+	return plan.gaps.find((gap) => gap.index === index);
+}
+
+export function categoryAxisLabelHandlers(
+	plan: AxisLabelPlan,
+	mapValue?: (value: string | number, index: number) => string,
+): {
+	interval: (index: number) => boolean;
+	formatter: (value: string | number, index: number) => string;
+	hideOverlap: false;
+	triggerEvent: true;
+} {
+	return {
+		interval: (index: number) => axisLabelShowsTick(plan, index),
+		formatter: (value: string | number, index: number) =>
+			formatCategoryAxisTick(plan, index, mapValue ? mapValue(value, index) : String(value ?? '')),
+		hideOverlap: false,
+		triggerEvent: true,
+	};
+}
+
 export function dataZoomRangeForIndices(
 	startIndex: number,
 	endIndex: number,
@@ -184,6 +217,41 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 	return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
 }
 
+export function isAxisComponentEvent(payload: unknown): boolean {
+	const type = asRecord(payload)?.componentType;
+	return type === 'xAxis' || type === 'yAxis' || type === 'singleAxis';
+}
+
+export function axisPlacementFromEvent(payload: unknown): 'bottom' | 'left' | null {
+	const type = asRecord(payload)?.componentType;
+	if (type === 'yAxis') return 'left';
+	if (type === 'xAxis' || type === 'singleAxis') return 'bottom';
+	return null;
+}
+
+/** Category index for an axis-label event (`dataIndex` / `tickIndex` / raw value). */
+export function tickIndexFromAxisEvent(payload: unknown, categories: string[]): number | null {
+	const item = asRecord(payload);
+	if (!item || categories.length === 0) return null;
+	const dataIndex = Number(item.dataIndex ?? item.tickIndex);
+	if (Number.isInteger(dataIndex) && dataIndex >= 0 && dataIndex < categories.length) return dataIndex;
+	const value = item.value ?? item.name;
+	if (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < categories.length) {
+		return value;
+	}
+	if (typeof value === 'string' && value && value !== AXIS_ELLIPSIS_LABEL) {
+		const index = categories.indexOf(value);
+		if (index >= 0) return index;
+	}
+	return null;
+}
+
+export function axisEllipsisPayload(plan: AxisLabelPlan, index: number): ReturnType<typeof ellipsisClickPayload> | null {
+	const gap = gapForTickIndex(plan, index);
+	if (!gap) return null;
+	return ellipsisClickPayload(gap.start, gap.end);
+}
+
 /** Resolve a click/hover payload to the skipped category index range. */
 export function resolveEllipsisRange(payload: unknown): { start: number; end: number } | null {
 	const item = asRecord(payload);
@@ -204,30 +272,23 @@ export function resolveEllipsisRange(payload: unknown): { start: number; end: nu
 	return { start, end };
 }
 
-/** Shown-label indices that bound a gap (`gap.start - 1` and `gap.end + 1`). */
-export function gapNeighborShownIndices(gap: Pick<AxisLabelGap, 'start' | 'end'>): {
-	left: number;
-	right: number;
-} {
-	return { left: gap.start - 1, right: gap.end + 1 };
-}
-
-/** Pixel of a `...` mark: midpoint of the two neighboring shown-label pixels. */
-export function ellipsisNeighborMidpoint(leftPixel: number, rightPixel: number): number {
-	return (leftPixel + rightPixel) / 2;
-}
-
-/** Grid-pixel offset for a gap’s `...` when `convertToPixel` misses. */
-export function ellipsisAxisOffset(
-	index: number,
-	startIndex: number,
-	endIndex: number,
-	axisLengthPx: number,
-): number {
-	const length = Number.isFinite(axisLengthPx) && axisLengthPx > 0 ? axisLengthPx : DEFAULT_AXIS_LENGTH;
-	const span = Math.max(1, endIndex - startIndex);
-	const t = (index - startIndex) / span;
-	return Math.max(0, Math.min(length, t * length));
+/**
+ * Resolve skipStart/skipEnd from an explicit payload or an axis-label event
+ * on a gap’s representative tick.
+ */
+export function resolveAxisEllipsisRange(
+	payload: unknown,
+	plan: AxisLabelPlan,
+	categories: string[],
+): { start: number; end: number } | null {
+	const direct = resolveEllipsisRange(payload);
+	if (direct) return direct;
+	if (!isAxisComponentEvent(payload)) return null;
+	const index = tickIndexFromAxisEvent(payload, categories);
+	if (index == null) return null;
+	const gap = gapForTickIndex(plan, index);
+	if (!gap) return null;
+	return { start: gap.start, end: gap.end };
 }
 
 export function skippedLabels(categories: string[], start: number, end: number): string[] {

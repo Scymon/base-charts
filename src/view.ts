@@ -59,13 +59,14 @@ import {
 	ZOOM_AFTER,
 } from './chart.ts';
 import {
+	axisPlacementFromEvent,
+	categoryAxisLabelHandlers,
 	dataZoomRangeForIndices,
-	ellipsisAxisOffset,
-	ellipsisNeighborMidpoint,
-	gapNeighborShownIndices,
+	isAxisComponentEvent,
 	planCategoryAxisTicks,
-	resolveEllipsisRange,
+	resolveAxisEllipsisRange,
 	visibleIndexRange,
+	type AxisLabelPlan,
 } from './axisLabels.ts';
 import { inferUnspecifiedSort } from './time.ts';
 import { pickOpenNote, resolveClickNotes, shouldOpenNotesOnClick } from './click.ts';
@@ -142,6 +143,12 @@ export class MotionChartView extends BasesView {
 	private clickBound = false;
 	private drillName: string | null = null;
 	private lastChartType: ChartSettings['chartType'] | null = null;
+	private categoryAxisPlans: {
+		placement: 'bottom' | 'left';
+		labels: string[];
+		property: string | null;
+		plan: AxisLabelPlan;
+	}[] = [];
 
 	constructor(controller: QueryController, parentEl: HTMLElement) {
 		super(controller);
@@ -302,12 +309,19 @@ export class MotionChartView extends BasesView {
 			this.clickBound = true;
 			this.chart.on('click', (params) => this.onChartClick(params as ClickPayload));
 			this.chart.on('mouseover', (params) => {
-				const range = resolveEllipsisRange(params);
-				if (!range || !this.lastData) return;
-				this.showEllipsisTip(range.start, range.end, this.lastData.categories, this.readSettings().xProperty);
+				const range = this.resolveViewEllipsis(params);
+				if (!range) return;
+				const axis = this.axisPlanForEvent(params);
+				this.showEllipsisTip(
+					range.start,
+					range.end,
+					axis?.labels ?? this.lastData?.categories ?? [],
+					axis?.property ?? this.readSettings().xProperty,
+					eventPixel(params),
+				);
 			});
 			this.chart.on('mouseout', (params) => {
-				if (resolveEllipsisRange(params)) this.hideEllipsisTip();
+				if (this.resolveViewEllipsis(params)) this.hideEllipsisTip();
 			});
 			this.chart.getZr().on('click', (event) => {
 				if (!event.target) {
@@ -341,11 +355,13 @@ export class MotionChartView extends BasesView {
 	}
 
 	private onChartClick(payload: ClickPayload): void {
-		const range = resolveEllipsisRange(payload);
+		const range = this.resolveViewEllipsis(payload);
 		if (range) {
+			this.hideEllipsisTip();
 			this.zoomToCategoryRange(range.start, range.end, this.lastData?.categories.length ?? 0);
 			return;
 		}
+		if (isAxisComponentEvent(payload)) return;
 		if (!this.lastData) return;
 		if (this.readSettings().chartType === 'icicle' && !shouldOpenNotesOnClick(payload)) {
 			this.drillName = payload.name ?? payload.data?.name ?? null;
@@ -403,6 +419,9 @@ export class MotionChartView extends BasesView {
 			return [{ placement: 'bottom', labels: data.seriesNames, property: settings.seriesProperty }];
 		}
 		if (type === 'scatter' && typeof data.points[0]?.x === 'number') return [];
+		if (type === 'streamgraph') {
+			return [{ placement: 'bottom', labels: data.categories, property: settings.xProperty }];
+		}
 		if (!usesCartesianGrid(type)) return [];
 		if (
 			type === 'ridgeline' ||
@@ -416,6 +435,24 @@ export class MotionChartView extends BasesView {
 		return [{ placement: 'bottom', labels: data.categories, property: settings.xProperty }];
 	}
 
+	private resolveViewEllipsis(payload: unknown): { start: number; end: number } | null {
+		for (const axis of this.axisPlansForEvent(payload)) {
+			const range = resolveAxisEllipsisRange(payload, axis.plan, axis.labels);
+			if (range) return range;
+		}
+		return null;
+	}
+
+	private axisPlanForEvent(payload: unknown): (typeof this.categoryAxisPlans)[number] | undefined {
+		return this.axisPlansForEvent(payload)[0];
+	}
+
+	private axisPlansForEvent(payload: unknown): typeof this.categoryAxisPlans {
+		const placement = axisPlacementFromEvent(payload);
+		if (!placement) return this.categoryAxisPlans;
+		return this.categoryAxisPlans.filter((axis) => axis.placement === placement);
+	}
+
 	private syncCategoryEllipsis(): void {
 		const chart = this.chart;
 		const data = this.lastData;
@@ -423,23 +460,23 @@ export class MotionChartView extends BasesView {
 		const settings = this.readSettings();
 		const axes = this.categoryAxesForChart(settings, data);
 		if (axes.length === 0) {
+			this.categoryAxisPlans = [];
 			this.hideEllipsisTip();
 			chart.setOption({ graphic: { elements: [] } }, { replaceMerge: ['graphic'], lazyUpdate: true });
 			return;
 		}
 		this.ellipsisSyncing = true;
 		try {
-			const theme = readChartTheme(this.rootEl);
 			const option = chart.getOption() as {
 				dataZoom?: unknown;
 				xAxis?: unknown;
 				yAxis?: unknown;
 			};
-			const graphics: object[] = [];
 			const xAxes = asOptionList(option.xAxis);
 			const yAxes = asOptionList(option.yAxis);
-			let xInterval: ((index: number) => boolean) | undefined;
-			let yInterval: ((index: number) => boolean) | undefined;
+			let xLabel: ReturnType<typeof categoryAxisLabelHandlers> | undefined;
+			let yLabel: ReturnType<typeof categoryAxisLabelHandlers> | undefined;
+			this.categoryAxisPlans = [];
 
 			for (const axis of axes) {
 				const zoom = readZoomWindow(option, axis.placement, axis.labels.length);
@@ -450,87 +487,31 @@ export class MotionChartView extends BasesView {
 					visibleStart: zoom.startIndex,
 					visibleEnd: zoom.endIndex,
 				});
-				const shown = new Set(plan.shown);
-				const interval = (index: number) => shown.has(index);
-				if (axis.placement === 'bottom') xInterval = interval;
-				else yInterval = interval;
-				for (const gap of plan.gaps) {
-					const pos = ellipsisPixel(chart, gap, axis.placement, zoom.startIndex, zoom.endIndex);
-					if (!pos) continue;
-					graphics.push(this.ellipsisGraphic(gap, pos, theme, axis.labels, axis.property, axis.labels.length));
-				}
+				this.categoryAxisPlans.push({ ...axis, plan });
+				const handlers = categoryAxisLabelHandlers(plan);
+				if (axis.placement === 'bottom') xLabel = handlers;
+				else yLabel = handlers;
 			}
 
 			const next: Record<string, unknown> = {
-				graphic: { elements: graphics },
+				graphic: { elements: [] },
 			};
-			if (xInterval) {
+			if (xLabel) {
 				next.xAxis =
 					xAxes.length > 1
-						? xAxes.map((_, index) =>
-								index === 0 ? { axisLabel: { interval: xInterval, hideOverlap: false } } : {},
-							)
-						: { axisLabel: { interval: xInterval, hideOverlap: false } };
+						? xAxes.map((_, index) => (index === 0 ? { axisLabel: xLabel } : {}))
+						: { axisLabel: xLabel };
 			}
-			if (yInterval) {
+			if (yLabel) {
 				next.yAxis =
 					yAxes.length > 1
-						? yAxes.map((_, index) =>
-								index === 0 ? { axisLabel: { interval: yInterval, hideOverlap: false } } : {},
-							)
-						: { axisLabel: { interval: yInterval, hideOverlap: false } };
+						? yAxes.map((_, index) => (index === 0 ? { axisLabel: yLabel } : {}))
+						: { axisLabel: yLabel };
 			}
 			chart.setOption(next, { replaceMerge: ['graphic'], lazyUpdate: true });
 		} finally {
 			this.ellipsisSyncing = false;
 		}
-	}
-
-	private ellipsisGraphic(
-		gap: { start: number; end: number; index: number },
-		pos: { x: number; y: number },
-		theme: { muted: string },
-		labels: string[],
-		property: string | null,
-		axisLength: number,
-	): object {
-		return {
-			type: 'group',
-			id: `axis-ellipsis-${gap.start}-${gap.end}-${gap.index}`,
-			left: pos.x,
-			top: pos.y,
-			silent: false,
-			cursor: 'pointer',
-			children: [
-				{
-					type: 'rect',
-					shape: { x: -16, y: -10, width: 32, height: 20 },
-					style: { fill: 'rgba(0,0,0,0)' },
-				},
-				{
-					type: 'text',
-					silent: true,
-					style: {
-						text: '...',
-						x: 0,
-						y: 0,
-						fill: theme.muted,
-						font: '12px sans-serif',
-						textAlign: 'center',
-						textVerticalAlign: 'middle',
-						opacity: 0.65,
-					},
-				},
-			],
-			onclick: () => {
-				this.hideEllipsisTip();
-				this.zoomToCategoryRange(gap.start, gap.end, axisLength);
-			},
-			onmouseover: () => {
-				this.showEllipsisTip(gap.start, gap.end, labels, property, pos);
-			},
-			onmouseout: () => this.hideEllipsisTip(),
-		};
 	}
 
 	private zoomToCategoryRange(start: number, end: number, total: number): void {
@@ -739,41 +720,17 @@ function mainGridRect(
 	return null;
 }
 
-function ellipsisPixel(
-	chart: echarts.ECharts,
-	gap: { start: number; end: number; index: number },
-	placement: 'bottom' | 'left',
-	startIndex: number,
-	endIndex: number,
-): { x: number; y: number } | null {
-	const rect = mainGridRect(chart);
-	if (!rect) return null;
-	const neighbors = gapNeighborShownIndices(gap);
-	try {
-		if (placement === 'left') {
-			const a = pixelNumber(chart.convertToPixel({ yAxisIndex: 0 }, neighbors.left) as number | number[], 1);
-			const b = pixelNumber(chart.convertToPixel({ yAxisIndex: 0 }, neighbors.right) as number | number[], 1);
-			if (Number.isFinite(a) && Number.isFinite(b)) {
-				return { x: rect.x - 14, y: ellipsisNeighborMidpoint(a, b) };
-			}
-		} else {
-			const a = pixelNumber(chart.convertToPixel({ xAxisIndex: 0 }, neighbors.left) as number | number[], 0);
-			const b = pixelNumber(chart.convertToPixel({ xAxisIndex: 0 }, neighbors.right) as number | number[], 0);
-			if (Number.isFinite(a) && Number.isFinite(b)) {
-				return { x: ellipsisNeighborMidpoint(a, b), y: rect.y + rect.height + 16 };
-			}
-		}
-	} catch {
-		/* fall through to grid interpolation so the first gap is never dropped */
-	}
-	const offset = ellipsisAxisOffset(
-		gap.index,
-		startIndex,
-		endIndex,
-		placement === 'left' ? rect.height : rect.width,
-	);
-	if (placement === 'left') return { x: rect.x - 14, y: rect.y + offset };
-	return { x: rect.x + offset, y: rect.y + rect.height + 16 };
+function eventPixel(payload: unknown): { x: number; y: number } | undefined {
+	const item = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null;
+	const ev = item?.event && typeof item.event === 'object' ? (item.event as Record<string, unknown>) : item;
+	const x = Number(ev?.offsetX);
+	const y = Number(ev?.offsetY);
+	if (Number.isFinite(x) && Number.isFinite(y)) return { x, y };
+	const native = ev?.event && typeof ev.event === 'object' ? (ev.event as Record<string, unknown>) : null;
+	const nx = Number(native?.offsetX);
+	const ny = Number(native?.offsetY);
+	if (Number.isFinite(nx) && Number.isFinite(ny)) return { x: nx, y: ny };
+	return undefined;
 }
 
 function findProperty(ids: BasesPropertyId[], names: string[]): BasesPropertyId | null {

@@ -5,11 +5,7 @@ import type {
 	SeriesOption,
 } from 'echarts';
 import { binCounts, boxFive } from './aggregate.ts';
-import {
-	axisLabelShowsIndex,
-	DEFAULT_AXIS_LENGTH,
-	planCategoryAxisTicks,
-} from './axisLabels.ts';
+import { categoryAxisLabelHandlers, DEFAULT_AXIS_LENGTH, planCategoryAxisTicks } from './axisLabels.ts';
 import { hasTimeCategories } from './time.ts';
 import { formatAxisTick, formatNumber } from './format.ts';
 import { formatCategoryTooltip } from './tooltip.ts';
@@ -220,21 +216,21 @@ function axisCommon(theme: ChartTheme, showGrid: boolean) {
 }
 
 /**
- * Keep first/last + intermediates that fit. Collapsed runs are drawn as `...`
- * graphics in the view (formatter cannot host a clickable span).
+ * One label stream: dates the greedy planner keeps, plus one `'...'` tick in
+ * each already-skipped run. Same rotate/align as the dates.
  */
 function categoryAxisLabel(
 	theme: ChartTheme,
 	placement: 'bottom' | 'left',
 	categories: string[],
 	axisLength = DEFAULT_AXIS_LENGTH,
+	mapValue?: (value: string | number, index: number) => string,
 ) {
 	const rotate = placement === 'bottom' ? 45 : 0;
 	const plan = planCategoryAxisTicks(categories, axisLength, { placement, rotate });
 	return {
 		color: theme.muted,
-		interval: (index: number) => axisLabelShowsIndex(plan, index),
-		hideOverlap: false,
+		...categoryAxisLabelHandlers(plan, mapValue),
 		rotate,
 	};
 }
@@ -1037,13 +1033,16 @@ export function buildChartOption(
 				bottom: categoryAxisPad(data.categories, 'bottom').bottom,
 				left: 24,
 				right: 24,
-				axisLabel: {
-					...categoryAxisLabel(theme, 'bottom', data.categories),
-					formatter: (value: string | number) => {
+				axisLabel: categoryAxisLabel(
+					theme,
+					'bottom',
+					data.categories,
+					DEFAULT_AXIS_LENGTH,
+					(value: string | number) => {
 						const index = Math.round((new Date(value).getTime() - origin) / 86_400_000);
 						return data.categories[index] ?? '';
 					},
-				},
+				),
 				axisLine: { lineStyle: { color: theme.border } },
 				axisTick: { lineStyle: { color: theme.border } },
 			},

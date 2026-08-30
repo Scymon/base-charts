@@ -3,14 +3,17 @@ import { describe, it } from 'node:test';
 import {
 	AXIS_ELLIPSIS,
 	AXIS_ELLIPSIS_LABEL,
+	axisEllipsisPayload,
+	axisLabelShowsTick,
+	categoryAxisLabelHandlers,
 	dataZoomRangeForIndices,
-	ellipsisAxisOffset,
 	ellipsisClickPayload,
-	ellipsisNeighborMidpoint,
-	gapNeighborShownIndices,
+	formatCategoryAxisTick,
 	planCategoryAxisTicks,
+	resolveAxisEllipsisRange,
 	resolveEllipsisRange,
 	skippedLabels,
+	tickIndexFromAxisEvent,
 	visibleIndexRange,
 } from './axisLabels.ts';
 
@@ -115,6 +118,39 @@ describe('planCategoryAxisTicks', () => {
 	});
 });
 
+describe('category axis label stream', () => {
+	it('shows planned dates and one ... tick per gap; formatter draws those names', () => {
+		const labels = weekLabels(80);
+		const plan = planCategoryAxisTicks(labels, 400, { placement: 'bottom', rotate: 45 });
+		const { interval, formatter } = categoryAxisLabelHandlers(plan);
+		assert.equal(plan.shown[0], 0);
+		assert.equal(plan.shown.at(-1), 79);
+		assert.ok(plan.gaps.length > 0);
+		assert.equal(interval(0), true);
+		assert.equal(interval(79), true);
+		assert.equal(formatter(labels[0] ?? '', 0), '2026-W01');
+		assert.equal(formatter(labels[79] ?? '', 79), '2026-W80');
+		assert.equal(formatCategoryAxisTick(plan, 0, labels[0] ?? ''), '2026-W01');
+		for (const index of plan.shown) {
+			assert.equal(axisLabelShowsTick(plan, index), true);
+			assert.equal(interval(index), true);
+			assert.equal(formatter(labels[index] ?? '', index), labels[index]);
+			assert.notEqual(formatter(labels[index] ?? '', index), AXIS_ELLIPSIS_LABEL);
+		}
+		for (const gap of plan.gaps) {
+			assert.equal(plan.shown.includes(gap.index), false);
+			assert.equal(axisLabelShowsTick(plan, gap.index), true);
+			assert.equal(interval(gap.index), true);
+			assert.equal(formatter(labels[gap.index] ?? '', gap.index), AXIS_ELLIPSIS_LABEL);
+			assert.equal(formatCategoryAxisTick(plan, gap.index, labels[gap.index] ?? ''), '...');
+			if (gap.start !== gap.index) {
+				assert.equal(interval(gap.start), false);
+			}
+		}
+		assert.equal(labels.includes('...'), false);
+	});
+});
+
 describe('resolveEllipsisRange', () => {
 	it('resolves a click payload to a start/end index range', () => {
 		const payload = ellipsisClickPayload(4, 20);
@@ -130,6 +166,38 @@ describe('resolveEllipsisRange', () => {
 		);
 		assert.equal(resolveEllipsisRange({ name: 'beta' }), null);
 		assert.equal(resolveEllipsisRange({ name: '...', data: { skipStart: 3, skipEnd: 1 } }), null);
+	});
+
+	it('resolves an axis-label event on the gap index to skipStart/skipEnd', () => {
+		const labels = weekLabels(80);
+		const plan = planCategoryAxisTicks(labels, 400, { placement: 'bottom', rotate: 45 });
+		const gap = plan.gaps[0];
+		assert.ok(gap);
+		const payload = axisEllipsisPayload(plan, gap.index);
+		assert.ok(payload);
+		assert.deepEqual(resolveEllipsisRange(payload), { start: gap.start, end: gap.end });
+		assert.deepEqual(
+			resolveAxisEllipsisRange(
+				{ componentType: 'xAxis', dataIndex: gap.index, value: labels[gap.index] },
+				plan,
+				labels,
+			),
+			{ start: gap.start, end: gap.end },
+		);
+		assert.equal(
+			resolveAxisEllipsisRange(
+				{ componentType: 'series', name: labels[gap.index], dataIndex: gap.index },
+				plan,
+				labels,
+			),
+			null,
+		);
+		assert.equal(
+			resolveAxisEllipsisRange({ componentType: 'xAxis', dataIndex: plan.shown[0], value: labels[0] }, plan, labels),
+			null,
+		);
+		assert.equal(axisEllipsisPayload(plan, plan.shown[0] ?? 0), null);
+		assert.equal(tickIndexFromAxisEvent({ componentType: 'xAxis', value: labels[gap.index] }, labels), gap.index);
 	});
 });
 
@@ -160,37 +228,3 @@ describe('skippedLabels', () => {
 	});
 });
 
-describe('ellipsisAxisOffset', () => {
-	it('interpolates a first-gap index along the grid', () => {
-		const offset = ellipsisAxisOffset(4, 0, 79, 400);
-		assert.ok(offset > 10 && offset < 50);
-	});
-});
-
-describe('ellipsisNeighborMidpoint', () => {
-	it('places the mark at the average of the two neighbor pixels', () => {
-		assert.equal(ellipsisNeighborMidpoint(100, 220), 160);
-		assert.equal(ellipsisNeighborMidpoint(40, 80), 60);
-	});
-
-	it('uses shown[0] and shown[1] as the first gap’s neighbors', () => {
-		const labels = weekLabels(80);
-		const plan = planCategoryAxisTicks(labels, 400, { placement: 'bottom', rotate: 45 });
-		const first = plan.gaps[0];
-		assert.ok(first);
-		assert.deepEqual(gapNeighborShownIndices(first), {
-			left: plan.shown[0],
-			right: plan.shown[1],
-		});
-		for (const gap of plan.gaps) {
-			const neighbors = gapNeighborShownIndices(gap);
-			assert.equal(neighbors.left, gap.start - 1);
-			assert.equal(neighbors.right, gap.end + 1);
-			assert.ok(plan.shown.includes(neighbors.left));
-			assert.ok(plan.shown.includes(neighbors.right));
-			const mark = ellipsisNeighborMidpoint(neighbors.left * 10, neighbors.right * 10);
-			assert.equal(mark, (neighbors.left * 10 + neighbors.right * 10) / 2);
-			assert.ok(mark > neighbors.left * 10 && mark < neighbors.right * 10);
-		}
-	});
-});
