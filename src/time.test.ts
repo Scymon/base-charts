@@ -2,14 +2,19 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
 	compareTimeLabels,
+	currentPeriod,
 	fillTimeCategories,
 	formatIsoWeek,
 	hasTimeCategories,
 	inferUnspecifiedSort,
 	isoWeeksInYear,
+	isoYearWeekUtc,
 	parseChartDate,
 	parseChartTime,
 } from './time.ts';
+
+/** Sunday 2026-08-30, ISO week 2026-W35. */
+const NOW_W35 = Date.UTC(2026, 7, 30);
 
 describe('parseChartTime', () => {
 	it('parses ISO weeks, including formula-style [W]', () => {
@@ -117,6 +122,36 @@ describe('fillTimeCategories', () => {
 		const filled = fillTimeCategories(['2025-W52', '2026-W02']);
 		assert.deepEqual(filled, ['2025-W52', '2026-W01', '2026-W02']);
 		assert.equal(formatIsoWeek(2026, 1), '2026-W01');
+	});
+
+	it('does not invent a tail through W52 when the last real week is W35', () => {
+		const filled = fillTimeCategories(['2026-W22', '2026-W35'], NOW_W35);
+		assert.equal(filled[0], '2026-W22');
+		assert.equal(filled[filled.length - 1], '2026-W35');
+		assert.equal(filled.includes('2026-W36'), false);
+		assert.equal(filled.includes('2026-W52'), false);
+		assert.equal(filled.includes('(empty)'), false);
+	});
+
+	it('still fills an internal hole such as W10 … W13', () => {
+		assert.deepEqual(fillTimeCategories(['2026-W10', '2026-W13'], NOW_W35), [
+			'2026-W10',
+			'2026-W11',
+			'2026-W12',
+			'2026-W13',
+		]);
+	});
+
+	it('does not pad out the year when a stray future week is present', () => {
+		assert.deepEqual(isoYearWeekUtc(NOW_W35), { year: 2026, week: 35 });
+		assert.equal(currentPeriod('week', NOW_W35)?.label, '2026-W35');
+		const filled = fillTimeCategories(['2026-W22', '2026-W35', '2026-W52'], NOW_W35);
+		assert.equal(filled.includes('2026-W36'), false);
+		assert.equal(filled.includes('2026-W51'), false);
+		assert.equal(filled.includes('2026-W52'), false);
+		assert.equal(filled[filled.length - 1], '2026-W35');
+		assert.ok(filled.includes('2026-W22'));
+		assert.ok(filled.includes('2026-W28'));
 	});
 });
 

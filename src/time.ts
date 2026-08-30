@@ -147,6 +147,28 @@ export function compareTimeLabels(left: string, right: string): number {
 	return left.localeCompare(right);
 }
 
+/** ISO year + week for a UTC instant (Monday-based ISO week). */
+export function isoYearWeekUtc(ms: number): { year: number; week: number } {
+	const date = new Date(ms);
+	const utc = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+	const dayNum = utc.getUTCDay() || 7;
+	utc.setUTCDate(utc.getUTCDate() + 4 - dayNum);
+	const year = utc.getUTCFullYear();
+	const week = Math.floor((utc.getTime() - isoWeekStartUtc(year, 1)) / (7 * 86_400_000)) + 1;
+	return { year, week };
+}
+
+/** Canonical current week / month / day at `nowMs` (UTC). */
+export function currentPeriod(kind: TimeKind, nowMs = Date.now()): ParsedTime | null {
+	const date = new Date(nowMs);
+	if (kind === 'day') return parseChartTime(formatIsoDate(date, true));
+	if (kind === 'month') {
+		return parseChartTime(formatYearMonth(date.getUTCFullYear(), date.getUTCMonth() + 1));
+	}
+	const { year, week } = isoYearWeekUtc(nowMs);
+	return parseChartTime(formatIsoWeek(year, week));
+}
+
 function nextPeriod(parsed: ParsedTime): ParsedTime | null {
 	if (parsed.kind === 'week') {
 		const year = Number(parsed.label.slice(0, 4));
@@ -202,10 +224,13 @@ function spanCount(start: ParsedTime, end: ParsedTime): number {
 }
 
 /**
- * Insert missing calendar steps between the earliest and latest time label.
- * Existing labels are kept as-is; invented gaps use the canonical format.
+ * Insert missing calendar steps between the earliest and latest *usable*
+ * time label. Usable = a real populated period that is not after `now`.
+ * Internal gaps stay (0 on the axis). Trailing invented zeros and future
+ * stretch past today are dropped. Existing labels are kept as-is; invented
+ * gaps use the canonical format.
  */
-export function fillTimeCategories(categories: string[]): string[] {
+export function fillTimeCategories(categories: string[], nowMs = Date.now()): string[] {
 	const unique: string[] = [];
 	for (const category of categories) {
 		if (category.trim() === '' || category.trim() === '(empty)') continue;
@@ -219,10 +244,12 @@ export function fillTimeCategories(categories: string[]): string[] {
 	const kind = majorityKind(parsed.map((item) => item.time));
 	if (!kind) return unique;
 
+	const nowPeriod = currentPeriod(kind, nowMs);
 	const ofKind = parsed.filter((item) => item.time.kind === kind);
 	ofKind.sort((a, b) => a.time.t - b.time.t);
-	const first = ofKind[0];
-	const last = ofKind[ofKind.length - 1];
+	const usable = nowPeriod ? ofKind.filter((item) => item.time.t <= nowPeriod.t) : ofKind;
+	const first = usable[0];
+	const last = usable[usable.length - 1];
 	if (!first || !last) return unique;
 	if (spanCount(first.time, last.time) > MAX_TIME_FILL) return unique;
 
@@ -230,7 +257,7 @@ export function fillTimeCategories(categories: string[]): string[] {
 	const filled: string[] = [];
 	let cursor: ParsedTime | null = first.time;
 	const originals = new Map<number, string>();
-	for (const item of ofKind) {
+	for (const item of usable) {
 		if (!originals.has(item.time.t)) originals.set(item.time.t, item.category);
 	}
 
@@ -245,9 +272,15 @@ export function fillTimeCategories(categories: string[]): string[] {
 		if (!cursor) break;
 	}
 
-	const leftovers = unique.filter(
-		(category) => !filled.includes(category) && category.trim() !== '' && category.trim() !== '(empty)',
-	);
+	const leftovers = unique.filter((category) => {
+		if (filled.includes(category)) return false;
+		if (category.trim() === '' || category.trim() === '(empty)') return false;
+		const time = parseChartTime(category);
+		// Same-kind leftovers are future (or otherwise past the last real
+		// bucket). Do not append them — that is what pads a year-end tail.
+		if (time && time.kind === kind) return false;
+		return true;
+	});
 	return leftovers.length > 0 ? [...filled, ...leftovers] : filled;
 }
 

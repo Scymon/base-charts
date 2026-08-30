@@ -50,6 +50,10 @@ import {
 	CHART_OPTION_REPLACE_MERGE,
 	initialCategoryWindow,
 	shouldResetChart,
+	SLIDER_EDGE,
+	SLIDER_END,
+	SLIDER_HEIGHT,
+	SLIDER_START,
 	ZOOM_AFTER,
 } from './chart.ts';
 import { inferUnspecifiedSort } from './time.ts';
@@ -240,6 +244,7 @@ export class MotionChartView extends BasesView {
 			chart.setOption(option, {
 				replaceMerge: [...CHART_OPTION_REPLACE_MERGE],
 			});
+			this.syncSliderChrome(option);
 			this.syncChartSize(chart);
 		} catch {
 			this.showEmpty('Could not draw this chart. Check the axis settings, or try another chart type.');
@@ -346,8 +351,25 @@ export class MotionChartView extends BasesView {
 		this.notesEl.empty();
 	}
 
+	private syncSliderChrome(option: { dataZoom?: unknown }): void {
+		const zooms = option.dataZoom;
+		const slider = Array.isArray(zooms)
+			? zooms.find((item) => item && typeof item === 'object' && (item as { type?: string }).type === 'slider')
+			: null;
+		const hasSlider = Boolean(slider);
+		const vertical = Boolean(
+			slider && typeof slider === 'object' && (slider as { yAxisIndex?: number }).yAxisIndex != null,
+		);
+		this.chartEl.classList.toggle('motion-chart-has-slider', hasSlider && !vertical);
+		this.chartEl.classList.toggle('motion-chart-has-slider-vertical', hasSlider && vertical);
+		this.chartEl.style.setProperty('--motion-slider-start', `${SLIDER_START}px`);
+		this.chartEl.style.setProperty('--motion-slider-end', `${SLIDER_END}px`);
+		this.chartEl.style.setProperty('--motion-slider-mid', `${SLIDER_EDGE + SLIDER_HEIGHT / 2}px`);
+	}
+
 	private showEmpty(message: string): void {
 		this.chart?.clear();
+		this.chartEl.classList.remove('motion-chart-has-slider', 'motion-chart-has-slider-vertical');
 		this.chartEl.hide();
 		this.notesEl.hide();
 		this.hintEl.hide();

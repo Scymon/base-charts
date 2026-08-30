@@ -80,9 +80,19 @@ export const ZOOM_AFTER = 12;
 export const ZOOM_WINDOW = 16;
 export const SLIDER_HEIGHT = 22;
 export const SLIDER_RESERVE = 36;
-/** Capsule / pill handle — easy to grab, matches the selected-range ends. */
+/** Bottom (horizontal slider) / right (vertical slider) inset from the canvas edge. */
+export const SLIDER_EDGE = 8;
+/** Left (horizontal) / top (vertical) inset so the track clears axis labels. */
+export const SLIDER_START = 48;
+/** Right (horizontal) / bottom (vertical) inset. */
+export const SLIDER_END = 20;
+/**
+ * Circle path for the zoom-window drag handles. handleSize 100% makes each end
+ * a full-height circle so the selected range reads as a pill.
+ */
 export const SLIDER_HANDLE_ICON =
-	'path://M4,0 A4,4 0 0 1 8,4 L8,20 A4,4 0 0 1 4,24 L4,24 A4,4 0 0 1 0,20 L0,4 A4,4 0 0 1 4,0 Z';
+	'path://M50,0 A50,50 0 1 1 50,100 A50,50 0 1 1 50,0 Z';
+export const SLIDER_HANDLE_SIZE = '100%';
 export const TREEMAP_LABEL_MIN_SHOW = 16;
 
 export function usesCartesianGrid(chartType: ChartSettings['chartType']): boolean {
@@ -121,6 +131,8 @@ export const CHART_OPTION_REPLACE_MERGE = [
 	'calendar',
 	'visualMap',
 	'dataZoom',
+	'tooltip',
+	'legend',
 	'polar',
 	'angleAxis',
 	'radiusAxis',
@@ -302,6 +314,23 @@ export function colorAlpha(color: string, alpha: number): string {
 	return color;
 }
 
+/** Vertical fade used under the slider waveform (opaque-ish at the data edge). */
+export function sliderAreaGradient(color: string, topAlpha: number) {
+	return {
+		type: 'linear' as const,
+		x: 0,
+		y: 0,
+		x2: 0,
+		y2: 1,
+		colorStops: [
+			// Local y=0 is the baseline; the slider group flips scaleY so this
+			// becomes the visual bottom. Transparent there, accent at the peak.
+			{ offset: 0, color: colorAlpha(color, 0) },
+			{ offset: 1, color: colorAlpha(color, topAlpha) },
+		],
+	};
+}
+
 function zoomStartEnd(
 	categories: string[],
 	sort: ChartSettings['sort'],
@@ -416,12 +445,11 @@ function dataZoomOption(
 	const { start, end } = zoomStartEnd(data.categories, settings.sort, windowSize);
 	const axis = horizontal ? { yAxisIndex: 0 } : { xAxisIndex: 0 };
 	const accent = theme.accent;
-	const dim = colorAlpha(accent, 0.22);
-	const dimmer = colorAlpha(accent, 0.12);
-	const hover = colorAlpha(accent, 0.85);
-	const handle = colorAlpha(accent, 0.42);
-	const line = colorAlpha(accent, 0.7);
-	const mutedLine = colorAlpha(theme.muted, 0.45);
+	const filler = colorAlpha(accent, 0.16);
+	const handle = colorAlpha(accent, 0.5);
+	const hover = colorAlpha(accent, 0.92);
+	const edgeLine = colorAlpha(theme.text, 0.32);
+	const selectedLine = colorAlpha(theme.text, 0.48);
 	return {
 		dataZoom: [
 			{
@@ -442,45 +470,62 @@ function dataZoomOption(
 				end,
 				height: horizontal ? undefined : SLIDER_HEIGHT,
 				width: horizontal ? SLIDER_HEIGHT : undefined,
-				bottom: horizontal ? undefined : 8,
-				right: horizontal ? 8 : 20,
-				left: horizontal ? undefined : 48,
-				top: horizontal ? 48 : undefined,
+				bottom: horizontal ? SLIDER_END : SLIDER_EDGE,
+				right: horizontal ? SLIDER_EDGE : SLIDER_END,
+				left: horizontal ? undefined : SLIDER_START,
+				top: horizontal ? SLIDER_START : undefined,
 				borderColor: 'transparent',
-				backgroundColor: colorAlpha(theme.border, 0.22),
-				fillerColor: dim,
+				borderRadius: SLIDER_HEIGHT / 2,
+				backgroundColor: colorAlpha(theme.border, 0.06),
+				fillerColor: filler,
 				handleIcon: SLIDER_HANDLE_ICON,
-				handleSize: 18,
+				handleSize: SLIDER_HANDLE_SIZE,
 				handleStyle: {
 					color: handle,
-					borderColor: 'transparent',
-					borderWidth: 0,
+					borderColor: colorAlpha(theme.text, 0.22),
+					borderWidth: 1,
 					shadowBlur: 0,
 				},
 				moveHandleSize: 1,
 				moveHandleStyle: {
-					color: line,
-					opacity: 0.9,
+					color: colorAlpha(accent, 0.35),
+					opacity: 0.5,
 				},
 				dataBackground: {
-					lineStyle: { color: mutedLine, width: 1 },
-					areaStyle: { color: dimmer, opacity: 1 },
+					lineStyle: {
+						color: edgeLine,
+						width: 1.25,
+						shadowBlur: 3,
+						shadowColor: colorAlpha(theme.text, 0.22),
+					},
+					areaStyle: {
+						color: sliderAreaGradient(accent, 0.28),
+						opacity: 1,
+					},
 				},
 				selectedDataBackground: {
-					lineStyle: { color: line, width: 1 },
-					areaStyle: { color: dim, opacity: 1 },
+					lineStyle: {
+						color: selectedLine,
+						width: 1.5,
+						shadowBlur: 3,
+						shadowColor: colorAlpha(accent, 0.25),
+					},
+					areaStyle: {
+						color: sliderAreaGradient(accent, 0.38),
+						opacity: 1,
+					},
 				},
 				emphasis: {
 					handleLabel: { show: false },
 					handleStyle: {
 						color: hover,
-						borderColor: 'transparent',
-						shadowBlur: 8,
-						shadowColor: colorAlpha(accent, 0.45),
+						borderColor: colorAlpha(theme.text, 0.4),
+						shadowBlur: 10,
+						shadowColor: colorAlpha(accent, 0.5),
 					},
 					moveHandleStyle: {
 						color: hover,
-						opacity: 1,
+						opacity: 0.7,
 					},
 				},
 				textStyle: { color: 'transparent', fontSize: 0 },
@@ -989,7 +1034,7 @@ export function buildChartOption(
 			...anim,
 			backgroundColor: theme.background,
 			color: colors,
-			tooltip: { ...tooltipBase(theme), trigger: 'item' },
+			tooltip: categoryTooltip(theme, data, settings, 'item'),
 			visualMap: {
 				min: 0,
 				max,
@@ -1034,7 +1079,7 @@ export function buildChartOption(
 			...anim,
 			backgroundColor: theme.background,
 			color: colors,
-			tooltip: { ...tooltipBase(theme), trigger: 'item' },
+			tooltip: categoryTooltip(theme, data, settings, 'item'),
 			grid: (() => {
 				const xPad = categoryAxisPad(data.categories, 'bottom');
 				const yPad = categoryAxisPad(data.seriesNames, 'left');
