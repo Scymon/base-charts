@@ -18,6 +18,7 @@ const settings = (overrides: Partial<ChartSettings> = {}): ChartSettings => ({
 	logY: false,
 	excludedTags: DEFAULT_EXCLUDED_TAGS,
 	maxCategories: 30,
+	minCategoryNotes: 1,
 	...overrides,
 });
 
@@ -259,6 +260,85 @@ describe('aggregateRows', () => {
 		assert.equal(result.categories.includes('2026-02-01'), false);
 		assert.ok(result.categories.length <= 3);
 		assert.deepEqual([...result.categories].sort(), ['2026-45-28', '2026-45-5', '2026-55-16']);
+	});
+
+	it('keeps every exploded list category when minCategoryNotes is 1', () => {
+		const tagged: RawRow[] = [
+			{ xLabels: ['A', 'B', 'C'], seriesLabels: [], y: 900, xNumeric: null, fileName: 'high', filePath: 'high.md' },
+			{ xLabels: ['A'], seriesLabels: [], y: 10, xNumeric: null, fileName: 'two', filePath: 'two.md' },
+			{ xLabels: ['A'], seriesLabels: [], y: 20, xNumeric: null, fileName: 'three', filePath: 'three.md' },
+		];
+		const result = aggregateRows(tagged, settings({ minCategoryNotes: 1, sort: 'label-asc' }));
+		assert.deepEqual(result.categories, ['A', 'B', 'C']);
+	});
+
+	it('drops X categories below minCategoryNotes by distinct notes', () => {
+		const tagged: RawRow[] = [
+			{ xLabels: ['A', 'B', 'C'], seriesLabels: [], y: 900, xNumeric: null, fileName: 'high', filePath: 'high.md' },
+			{ xLabels: ['A'], seriesLabels: [], y: 10, xNumeric: null, fileName: 'two', filePath: 'two.md' },
+			{ xLabels: ['A'], seriesLabels: [], y: 20, xNumeric: null, fileName: 'three', filePath: 'three.md' },
+		];
+		const result = aggregateRows(tagged, settings({ minCategoryNotes: 2, sort: 'label-asc' }));
+		assert.deepEqual(result.categories, ['A']);
+		assert.equal(result.categories.includes('B'), false);
+		assert.equal(result.categories.includes('C'), false);
+	});
+
+	it('counts a repeated label on one note as n=1', () => {
+		const tagged: RawRow[] = [
+			{ xLabels: ['A', 'A'], seriesLabels: [], y: 50, xNumeric: null, fileName: 'one', filePath: 'one.md' },
+			{ xLabels: ['B'], seriesLabels: [], y: 10, xNumeric: null, fileName: 'two', filePath: 'two.md' },
+			{ xLabels: ['B'], seriesLabels: [], y: 20, xNumeric: null, fileName: 'three', filePath: 'three.md' },
+		];
+		const result = aggregateRows(tagged, settings({ minCategoryNotes: 2, sort: 'label-asc' }));
+		assert.deepEqual(result.categories, ['B']);
+	});
+
+	it('applies minCategoryNotes before maxCategories so the cap is spent on sifted buckets', () => {
+		const tagged: RawRow[] = [
+			{ xLabels: ['rare-high', 'common-a', 'common-b'], seriesLabels: [], y: 999, xNumeric: null, fileName: 'one', filePath: 'one.md' },
+			{ xLabels: ['common-a', 'common-b'], seriesLabels: [], y: 10, xNumeric: null, fileName: 'two', filePath: 'two.md' },
+			{ xLabels: ['common-a'], seriesLabels: [], y: 10, xNumeric: null, fileName: 'three', filePath: 'three.md' },
+			{ xLabels: ['singleton-2'], seriesLabels: [], y: 800, xNumeric: null, fileName: 'four', filePath: 'four.md' },
+			{ xLabels: ['singleton-3'], seriesLabels: [], y: 700, xNumeric: null, fileName: 'five', filePath: 'five.md' },
+		];
+		const result = aggregateRows(
+			tagged,
+			settings({ minCategoryNotes: 2, maxCategories: 2, sort: 'value-desc' }),
+		);
+		assert.equal(result.categories.length, 2);
+		assert.ok(result.categories.includes('common-a'));
+		assert.ok(result.categories.includes('common-b'));
+		assert.equal(result.categories.includes('rare-high'), false);
+		assert.equal(result.categories.includes('singleton-2'), false);
+		assert.equal(result.categories.includes('singleton-3'), false);
+	});
+
+	it('does not drop a single-note week when minCategoryNotes is 2', () => {
+		const weeks: RawRow[] = [
+			{ xLabels: ['2026-W10'], seriesLabels: [], y: 10, xNumeric: null, fileName: 'a' },
+			{ xLabels: ['2026-W11'], seriesLabels: [], y: 20, xNumeric: null, fileName: 'b' },
+			{ xLabels: ['2026-W11'], seriesLabels: [], y: 30, xNumeric: null, fileName: 'c' },
+		];
+		const result = aggregateRows(
+			weeks,
+			settings({ chartType: 'line', aggregation: 'sum', sort: 'time-asc', minCategoryNotes: 2 }),
+		);
+		assert.ok(result.categories.includes('2026-W10'));
+		assert.ok(result.categories.includes('2026-W11'));
+		assert.equal(result.values[0]?.[result.categories.indexOf('2026-W10')], 10);
+	});
+
+	it('still sifts heatmap categories the same way as bar', () => {
+		const tagged: RawRow[] = [
+			{ xLabels: ['A', 'B'], seriesLabels: ['east'], y: 90, xNumeric: null, fileName: 'high', filePath: 'high.md' },
+			{ xLabels: ['A'], seriesLabels: ['west'], y: 10, xNumeric: null, fileName: 'two', filePath: 'two.md' },
+			{ xLabels: ['A'], seriesLabels: ['east'], y: 20, xNumeric: null, fileName: 'three', filePath: 'three.md' },
+		];
+		const kept = aggregateRows(tagged, settings({ chartType: 'heatmap', minCategoryNotes: 1, sort: 'label-asc' }));
+		assert.deepEqual(kept.categories, ['A', 'B']);
+		const sifted = aggregateRows(tagged, settings({ chartType: 'heatmap', minCategoryNotes: 2, sort: 'label-asc' }));
+		assert.deepEqual(sifted.categories, ['A']);
 	});
 
 	it('still caps tag charts with maxCategories', () => {

@@ -109,6 +109,31 @@ function pushNote(notes: CategoryNote[], row: RawRow, y: number): void {
 	});
 }
 
+function noteKey(note: CategoryNote): string {
+	return note.path || note.name;
+}
+
+/** Distinct notes in one X category across every series (duplicate labels on one note count once). */
+function distinctCategoryNotes(
+	category: string,
+	seriesNames: string[],
+	noteMap: Map<string, CategoryNote[]>,
+): number {
+	const seen = new Set<string>();
+	for (const series of seriesNames) {
+		for (const note of noteMap.get(`${series}\0${category}`) ?? []) {
+			seen.add(noteKey(note));
+		}
+	}
+	return seen.size;
+}
+
+function minNotesThreshold(settings: ChartSettings): number {
+	const raw = settings.minCategoryNotes;
+	if (!Number.isFinite(raw)) return 1;
+	return Math.max(1, Math.floor(raw));
+}
+
 export function binCounts(
 	values: number[],
 	binCount = 16,
@@ -230,15 +255,24 @@ export function aggregateRows(
 	const timeLike = hasTimeCategories(populated);
 	const sort = resolveCategorySort(settings.sort, populated);
 	const cap = Math.max(1, settings.maxCategories);
+	const minNotes = minNotesThreshold(settings);
 	const raceByDate = settings.chartType === 'bar-race' && timeLike;
 
-	const populatedTotals = populated.map((category) => {
+	let populatedTotals = populated.map((category) => {
 		let total = 0;
 		for (const series of names) {
 			total += valueMap.get(`${series}\0${category}`) ?? 0;
 		}
 		return { category, total };
 	});
+
+	// Optional sift: drop rare X buckets before the category cap spends slots on them.
+	// Time-like axes skip this so a one-note week/day does not punch a hole in the calendar.
+	if (!timeLike && minNotes > 1) {
+		populatedTotals = populatedTotals.filter(
+			(item) => distinctCategoryNotes(item.category, names, noteMap) >= minNotes,
+		);
+	}
 
 	let keptPopulated = populatedTotals;
 	if (timeLike || raceByDate) {

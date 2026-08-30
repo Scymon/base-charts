@@ -114,6 +114,18 @@ export function viewOptions(config: BasesViewConfig): BasesAllOptions[] {
 			max: 80,
 			step: 1,
 		},
+		Object.assign(
+			{
+				type: 'slider' as const,
+				key: 'minCategoryNotes',
+				displayName: 'Min n',
+				default: 1,
+				min: 1,
+				max: 20,
+				step: 1,
+			},
+			{ placeholder: '1 shows every category. Higher drops groups with fewer notes.' },
+		),
 		{
 			type: 'multitext',
 			key: 'excludedTags',
