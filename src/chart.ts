@@ -5,6 +5,11 @@ import type {
 	SeriesOption,
 } from 'echarts';
 import { binCounts, boxFive } from './aggregate.ts';
+import {
+	axisLabelShowsIndex,
+	DEFAULT_AXIS_LENGTH,
+	planCategoryAxisTicks,
+} from './axisLabels.ts';
 import { hasTimeCategories } from './time.ts';
 import { formatAxisTick, formatNumber } from './format.ts';
 import { formatCategoryTooltip } from './tooltip.ts';
@@ -144,6 +149,7 @@ export const CHART_OPTION_REPLACE_MERGE = [
 	'parallelAxis',
 	'title',
 	'options',
+	'graphic',
 ] as const;
 
 export function logSafeValue(value: number, logY: boolean): number | null {
@@ -213,13 +219,23 @@ function axisCommon(theme: ChartTheme, showGrid: boolean) {
 	};
 }
 
-/** Show every category name. interval:'auto' / hideOverlap skips labels on dense category charts. */
-function categoryAxisLabel(theme: ChartTheme, placement: 'bottom' | 'left') {
+/**
+ * Keep first/last + intermediates that fit. Collapsed runs are drawn as `...`
+ * graphics in the view (formatter cannot host a clickable span).
+ */
+function categoryAxisLabel(
+	theme: ChartTheme,
+	placement: 'bottom' | 'left',
+	categories: string[],
+	axisLength = DEFAULT_AXIS_LENGTH,
+) {
+	const rotate = placement === 'bottom' ? 45 : 0;
+	const plan = planCategoryAxisTicks(categories, axisLength, { placement, rotate });
 	return {
 		color: theme.muted,
-		interval: 0,
+		interval: (index: number) => axisLabelShowsIndex(plan, index),
 		hideOverlap: false,
-		rotate: placement === 'bottom' ? 45 : 0,
+		rotate,
 	};
 }
 
@@ -1022,7 +1038,7 @@ export function buildChartOption(
 				left: 24,
 				right: 24,
 				axisLabel: {
-					...categoryAxisLabel(theme, 'bottom'),
+					...categoryAxisLabel(theme, 'bottom', data.categories),
 					formatter: (value: string | number) => {
 						const index = Math.round((new Date(value).getTime() - origin) / 86_400_000);
 						return data.categories[index] ?? '';
@@ -1190,13 +1206,13 @@ export function buildChartOption(
 				type: 'category',
 				data: data.categories,
 				...axisCommon(theme, false),
-				axisLabel: categoryAxisLabel(theme, 'bottom'),
+				axisLabel: categoryAxisLabel(theme, 'bottom', data.categories),
 			},
 			yAxis: {
 				type: 'category',
 				data: data.seriesNames,
 				...axisCommon(theme, false),
-				axisLabel: categoryAxisLabel(theme, 'left'),
+				axisLabel: categoryAxisLabel(theme, 'left', data.seriesNames),
 			},
 			visualMap: {
 				min: 0,
@@ -1242,7 +1258,7 @@ export function buildChartOption(
 				type: 'category',
 				data: data.categories,
 				...axisCommon(theme, settings.showGrid),
-				axisLabel: categoryAxisLabel(theme, 'bottom'),
+				axisLabel: categoryAxisLabel(theme, 'bottom', data.categories),
 			},
 			yAxis: valueAxisOption(theme, settings.showGrid, logY),
 			series,
@@ -1317,7 +1333,7 @@ export function buildChartOption(
 				type: 'category',
 				data: data.categories,
 				...axisCommon(theme, settings.showGrid),
-				axisLabel: categoryAxisLabel(theme, 'bottom'),
+				axisLabel: categoryAxisLabel(theme, 'bottom', data.categories),
 			},
 			yAxis: valueAxisOption(theme, settings.showGrid, logY),
 			series,
@@ -1385,7 +1401,7 @@ export function buildChartOption(
 				...axisCommon(theme, settings.showGrid),
 				...(typeof data.points[0]?.x === 'number'
 					? {}
-					: { axisLabel: categoryAxisLabel(theme, 'bottom') }),
+					: { axisLabel: categoryAxisLabel(theme, 'bottom', data.categories) }),
 			},
 			yAxis: valueAxisOption(theme, settings.showGrid, logY),
 			series: data.seriesNames.map((name) => ({
@@ -1424,7 +1440,7 @@ export function buildChartOption(
 				type: 'category',
 				data: data.categories,
 				...axisCommon(theme, settings.showGrid),
-				axisLabel: categoryAxisLabel(theme, 'bottom'),
+				axisLabel: categoryAxisLabel(theme, 'bottom', data.categories),
 			},
 			yAxis: valueAxisOption(theme, settings.showGrid, false),
 			series: [
@@ -1496,7 +1512,7 @@ export function buildChartOption(
 		type: 'category' as const,
 		data: data.categories,
 		...axisCommon(theme, settings.showGrid && !horizontal),
-		axisLabel: categoryAxisLabel(theme, horizontal ? 'left' : 'bottom'),
+		axisLabel: categoryAxisLabel(theme, horizontal ? 'left' : 'bottom', data.categories),
 	};
 	const valueAxis = percent
 		? valueAxisOption(theme, settings.showGrid, false, {
@@ -2057,7 +2073,7 @@ function bulletOption(
 			type: 'category',
 			data: data.categories,
 			...axisCommon(theme, false),
-			axisLabel: categoryAxisLabel(theme, 'left'),
+			axisLabel: categoryAxisLabel(theme, 'left', data.categories),
 		},
 		series: [
 			{
@@ -2107,7 +2123,7 @@ function slopeOption(
 			type: 'category',
 			data: data.seriesNames,
 			...axisCommon(theme, settings.showGrid),
-			axisLabel: categoryAxisLabel(theme, 'bottom'),
+			axisLabel: categoryAxisLabel(theme, 'bottom', data.seriesNames),
 		},
 		yAxis: valueAxisOption(theme, settings.showGrid, logY),
 		series: data.categories.map((category, index) => ({
@@ -2247,7 +2263,7 @@ function violinOption(
 			type: 'category',
 			data: data.categories,
 			...axisCommon(theme, settings.showGrid),
-			axisLabel: categoryAxisLabel(theme, 'bottom'),
+			axisLabel: categoryAxisLabel(theme, 'bottom', data.categories),
 		},
 		yAxis: valueAxisOption(theme, settings.showGrid, logY),
 		series,
@@ -2303,7 +2319,7 @@ function barRaceOption(
 			type: 'category',
 			data: first.map((item) => item.name),
 			...axisCommon(theme, false),
-			axisLabel: categoryAxisLabel(theme, 'left'),
+			axisLabel: categoryAxisLabel(theme, 'left', first.map((item) => item.name)),
 		},
 		options: frames.map((frame) => ({
 			title: {
