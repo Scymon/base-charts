@@ -1856,6 +1856,8 @@ function violinOption(
 		),
 	}));
 	const maxCount = Math.max(1, ...groups.flatMap((group) => group.bins.map((bin) => bin.count)));
+	const yMin = domain?.min ?? 0;
+	const yMax = domain?.max ?? 1;
 	const series: SeriesOption[] = groups.map((group, index) => ({
 		name: group.name,
 		type: 'custom',
@@ -1863,11 +1865,11 @@ function violinOption(
 		data: [
 			{
 				name: group.name,
-				value: index,
+				value: [index, yMin, yMax],
 				bins: group.bins,
 			},
 		],
-		encode: { x: 0, y: 1 },
+		encode: { x: 0, y: [1, 2] },
 		renderItem: (_params, api) => {
 			const categoryIndex = Number(api.value(0));
 			const half = 0.42;
@@ -1910,7 +1912,7 @@ function violinOption(
 			...axisCommon(theme, settings.showGrid),
 			axisLabel: categoryAxisLabel(theme, 'bottom'),
 		},
-		yAxis: valueAxisOption(theme, settings.showGrid, logY),
+		yAxis: valueAxisOption(theme, settings.showGrid, logY, { min: yMin, max: yMax }),
 		series,
 	};
 }

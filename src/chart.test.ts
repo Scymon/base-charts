@@ -599,6 +599,7 @@ describe('buildChartOption', () => {
 		const bins = violinSeries?.data?.[0]?.bins ?? [];
 		assert.ok(bins.some((bin) => bin.mid > 250 && bin.count > 0));
 		assert.ok(bins.reduce((sum, bin) => sum + bin.count, 0) === 4);
+		assert.ok(((violin.yAxis as { max?: number }).max ?? 0) >= 4000);
 	});
 
 	it('degrades bar race to a ranked bar when X is not dates', () => {
