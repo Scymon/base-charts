@@ -49,10 +49,19 @@ function categoryFromParams(params: unknown): string {
 	return '';
 }
 
-function seriesFromParams(params: unknown): string | undefined {
+function seriesFromParams(
+	params: unknown,
+	data?: AggregatedChart,
+	settings?: ChartSettings,
+): string | undefined {
+	const heat = heatmapCellFromParams(params, data, settings);
+	if (heat?.series && !DUMMY_SERIES.has(heat.series)) return heat.series;
 	if (Array.isArray(params)) return undefined;
 	const item = params as TooltipParam;
-	if (item.seriesName && !DUMMY_SERIES.has(item.seriesName)) return item.seriesName;
+	if (item.seriesName && !DUMMY_SERIES.has(item.seriesName) && (!data || data.seriesNames.includes(item.seriesName))) {
+		return item.seriesName;
+	}
+	if (item.seriesName && !DUMMY_SERIES.has(item.seriesName) && !data) return item.seriesName;
 	if (item.data?.target && !DUMMY_SERIES.has(item.data.target)) return item.data.target;
 	return undefined;
 }
@@ -100,21 +109,25 @@ function formatDatum(value: unknown): string {
 	return String(value);
 }
 
-function clickPayloadFromParams(params: unknown): ClickPayload {
+function clickPayloadFromParams(
+	params: unknown,
+	data?: AggregatedChart,
+	settings?: ChartSettings,
+): ClickPayload {
 	const item = firstParam(params);
 	return {
 		name: categoryFromParams(params) || item?.name || item?.data?.name,
-		seriesName: seriesFromParams(params),
+		seriesName: seriesFromParams(params, data, settings),
 		dataType: item?.dataType,
 		data: item?.data,
 	};
 }
 
-function notesForTooltip(data: AggregatedChart, params: unknown): CategoryNote[] {
-	const resolved = resolveClickNotes(data, clickPayloadFromParams(params));
+function notesForTooltip(data: AggregatedChart, params: unknown, settings?: ChartSettings): CategoryNote[] {
+	const resolved = resolveClickNotes(data, clickPayloadFromParams(params, data, settings));
 	if (resolved.length > 0) return resolved;
 	const category = categoryFromParams(params);
-	const seriesName = seriesFromParams(params);
+	const seriesName = seriesFromParams(params, data, settings);
 	const item = firstParam(params);
 	const path = typeof item?.data?.path === 'string' ? item.data.path : '';
 	if (path) {
@@ -131,7 +144,53 @@ function notesForTooltip(data: AggregatedChart, params: unknown): CategoryNote[]
 	return [];
 }
 
-function xyFromParams(params: unknown): { x?: unknown; y?: number } {
+/**
+ * Heatmap cells are [xIndex, yIndex, cellValue]. Calendar cells are
+ * [date, value] (or [x, y, value] on the cartesian fallback). Scatter is
+ * [x, y]. Do not reuse scatter parsing for heatmap — that labels the
+ * column/row indexes with xProperty/yProperty.
+ */
+function heatmapCellFromParams(
+	params: unknown,
+	data?: AggregatedChart,
+	settings?: ChartSettings,
+): { x?: unknown; y?: number; series?: string } | null {
+	if (settings && settings.chartType !== 'heatmap' && settings.chartType !== 'calendar') return null;
+	const item = firstParam(params);
+	const raw = item?.value ?? item?.data?.value;
+	if (!Array.isArray(raw) || raw.length === 0) return null;
+
+	if (settings?.chartType === 'calendar' && typeof raw[0] === 'string') {
+		const y = Number(raw[1]);
+		return { x: raw[0], y: Number.isFinite(y) ? y : undefined };
+	}
+
+	if (raw.length >= 3 && typeof raw[0] === 'number' && typeof raw[1] === 'number') {
+		const xIndex = raw[0];
+		const yIndex = raw[1];
+		const cell = Number(raw[2]);
+		const category =
+			(typeof item?.name === 'string' && item.name) ||
+			(data && Number.isInteger(xIndex) ? data.categories[xIndex] : undefined) ||
+			raw[0];
+		const named = item?.seriesName && data?.seriesNames.includes(item.seriesName) ? item.seriesName : undefined;
+		const series = named ?? (data && Number.isInteger(yIndex) ? data.seriesNames[yIndex] : undefined);
+		return {
+			x: category,
+			y: Number.isFinite(cell) ? cell : undefined,
+			series: series && !DUMMY_SERIES.has(series) ? series : undefined,
+		};
+	}
+	return null;
+}
+
+function xyFromParams(
+	params: unknown,
+	settings?: ChartSettings,
+	data?: AggregatedChart,
+): { x?: unknown; y?: number; series?: string } {
+	const heat = heatmapCellFromParams(params, data, settings);
+	if (heat) return heat;
 	const item = firstParam(params);
 	const raw = item?.value ?? item?.data?.value;
 	if (Array.isArray(raw)) {
@@ -142,12 +201,16 @@ function xyFromParams(params: unknown): { x?: unknown; y?: number } {
 	return {};
 }
 
-function findRawPoint(data: AggregatedChart, params: unknown): ScatterPoint | undefined {
+function findRawPoint(
+	data: AggregatedChart,
+	params: unknown,
+	settings?: ChartSettings,
+): ScatterPoint | undefined {
 	const item = firstParam(params);
 	const name = (typeof item?.name === 'string' && item.name) || item?.data?.name || '';
 	const path = typeof item?.data?.path === 'string' ? item.data.path : '';
-	const series = seriesFromParams(params);
-	const { x, y } = xyFromParams(params);
+	const series = seriesFromParams(params, data, settings);
+	const { x, y } = xyFromParams(params, settings, data);
 
 	if (path) {
 		const hit = data.points.find((point) => point.path === path && (!series || point.series === series || !point.series));
@@ -171,8 +234,14 @@ function findRawPoint(data: AggregatedChart, params: unknown): ScatterPoint | un
 	return undefined;
 }
 
-function plottedY(params: unknown, point: ScatterPoint | undefined, note: CategoryNote | undefined): number | undefined {
-	const fromParams = xyFromParams(params).y;
+function plottedY(
+	params: unknown,
+	point: ScatterPoint | undefined,
+	note: CategoryNote | undefined,
+	settings?: ChartSettings,
+	data?: AggregatedChart,
+): number | undefined {
+	const fromParams = xyFromParams(params, settings, data).y;
 	if (fromParams != null) return fromParams;
 	if (point && Number.isFinite(point.y)) return point.y;
 	if (note && Number.isFinite(note.y)) return note.y;
@@ -187,11 +256,14 @@ function shouldUseSingleDatumCard(
 	notes: CategoryNote[],
 	point: ScatterPoint | undefined,
 ): boolean {
-	const { x, y } = xyFromParams(params);
+	const { x, y } = xyFromParams(params, settings, data);
 	const hasPlottedValue = y != null || typeof x === 'number';
 	const categoryBucket = data.categories.includes(category);
 
 	if (settings.chartType === 'scatter' && (point || hasPlottedValue)) return true;
+	if ((settings.chartType === 'heatmap' || settings.chartType === 'calendar') && notes.length === 1) {
+		return true;
+	}
 	if (POINT_CHART_TYPES.has(settings.chartType) && notes.length === 1) return true;
 	if (notes.length === 0 && !categoryBucket && (point || hasPlottedValue)) return true;
 	return false;
@@ -253,14 +325,24 @@ function formatSingleNoteTooltip(
 	point?: ScatterPoint,
 ): string {
 	const category = categoryFromParams(params);
-	const xy = xyFromParams(params);
-	const yValue = plottedY(params, point, note);
+	const xy = xyFromParams(params, settings, data);
+	const yValue = plottedY(params, point, note, settings, data);
 	const xValue = point?.x ?? xy.x ?? (data.categories.includes(category) ? category : undefined);
-	const seriesName = visibleSeriesName(seriesFromParams(params) ?? point?.series, data, note.name, {
-		allowLoneSeries: true,
-	});
+	const seriesName = visibleSeriesName(
+		xy.series ?? seriesFromParams(params, data, settings) ?? point?.series,
+		data,
+		note.name,
+		{ allowLoneSeries: true },
+	);
 	const parts = [titleLine(displayNoteName(note.name))];
-	if (seriesName) parts.push(statLine(escapeHtml(seriesName)));
+	if (seriesName) {
+		const seriesLabel = propertyLabel(settings.seriesProperty);
+		parts.push(
+			settings.chartType === 'heatmap' && seriesLabel
+				? labeledValue(seriesLabel, seriesName)
+				: statLine(escapeHtml(seriesName)),
+		);
+	}
 	if (xValue != null && xValue !== '') {
 		parts.push(labeledValue(propertyLabel(settings.xProperty), formatDatum(xValue)));
 	}
@@ -285,14 +367,31 @@ function formatGroupTooltip(
 	data: AggregatedChart,
 	settings: ChartSettings,
 	category: string,
+	params?: unknown,
 ): string {
-	const visibleSeries = visibleSeriesName(seriesName, data, title);
+	const xy = params ? xyFromParams(params, settings, data) : {};
+	const visibleSeries = visibleSeriesName(seriesName ?? xy.series, data, title);
 	const count = raw.length || notes.length;
 	const parts = [titleLine(title || visibleSeries || '')];
-	if (visibleSeries) parts.push(statLine(escapeHtml(visibleSeries)));
-	parts.push(statLine(`n ${count}`));
-	if (settings.aggregation !== 'count') {
-		parts.push(statLine(`${labelAggregation(settings.aggregation)} ${formatAxisTick(value)}`));
+	if (settings.chartType === 'heatmap') {
+		const xValue = xy.x ?? (data.categories.includes(category) ? category : title);
+		if (xValue != null && xValue !== '') {
+			parts.push(labeledValue(propertyLabel(settings.xProperty), formatDatum(xValue)));
+		}
+		if (visibleSeries) {
+			parts.push(labeledValue(propertyLabel(settings.seriesProperty), visibleSeries));
+		}
+		const cell = xy.y ?? value;
+		if (cell != null) {
+			parts.push(labeledValue(propertyLabel(settings.yProperty), formatAxisTick(cell)));
+		}
+		parts.push(statLine(`n ${count}`));
+	} else {
+		if (visibleSeries) parts.push(statLine(escapeHtml(visibleSeries)));
+		parts.push(statLine(`n ${count}`));
+		if (settings.aggregation !== 'count') {
+			parts.push(statLine(`${labelAggregation(settings.aggregation)} ${formatAxisTick(value)}`));
+		}
 	}
 	if (raw.length > 0) {
 		const min = Math.min(...raw);
@@ -315,11 +414,11 @@ export function formatCategoryTooltip(
 	settings: ChartSettings,
 ): string {
 	const category = categoryFromParams(params);
-	const seriesName = seriesFromParams(params);
-	const notes = notesForTooltip(data, params);
-	const point = findRawPoint(data, params);
+	const seriesName = seriesFromParams(params, data, settings);
+	const notes = notesForTooltip(data, params, settings);
+	const point = findRawPoint(data, params, settings);
 	if (shouldUseSingleDatumCard(data, settings, params, category, notes, point)) {
-		const y = plottedY(params, point, notes[0]);
+		const y = plottedY(params, point, notes[0], settings, data);
 		const note = point
 			? { name: point.name, path: point.path ?? notes[0]?.path ?? '', y: y ?? point.y }
 			: (notes[0] ?? {
@@ -332,7 +431,7 @@ export function formatCategoryTooltip(
 	const raw = rawAt(data, category, seriesName);
 	const value = aggregatedAt(data, category, seriesName);
 	if (notes.length === 0 && raw.length === 0) {
-		const y = xyFromParams(params).y;
+		const y = xyFromParams(params, settings, data).y;
 		if (y != null) {
 			return formatSingleNoteTooltip(
 				{ name: category || point?.name || '', path: firstParam(params)?.data?.path ?? point?.path ?? '', y },
@@ -344,7 +443,7 @@ export function formatCategoryTooltip(
 		}
 		return wrapTooltip(titleLine(category || seriesName || ''));
 	}
-	return formatGroupTooltip(category, seriesName, notes, raw, value, data, settings, category);
+	return formatGroupTooltip(category, seriesName, notes, raw, value, data, settings, category, params);
 }
 
 export function notePathFromTarget(target: EventTarget | null): string | null {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { aggregateRows } from './aggregate.ts';
 import { formatCategoryTooltip, notePathFromTarget, propertyLabel } from './tooltip.ts';
-import { DEFAULT_EXCLUDED_TAGS, type ChartSettings, type RawRow } from './types.ts';
+import { DEFAULT_EXCLUDED_TAGS, type AggregatedChart, type ChartSettings, type RawRow } from './types.ts';
 
 const settings = (overrides: Partial<ChartSettings> = {}): ChartSettings => ({
 	chartType: 'bar',
@@ -250,6 +250,82 @@ describe('formatCategoryTooltip', () => {
 		assert.match(html, /rate /);
 		assert.equal(html.includes('Y2 '), false);
 		assert.equal(html.includes('like-rate'), false);
+	});
+
+	it('reads a heatmap cell as category + series + cell value, not scatter indexes', () => {
+		const categories = Array.from({ length: 10 }, (_, index) => (index === 9 ? 'alligator-gar' : `tag-${index}`));
+		const empty = () => Array.from({ length: 10 }, () => 0);
+		const emptyRaw = () => Array.from({ length: 10 }, () => [] as number[]);
+		const emptyNotes = () => Array.from({ length: 10 }, () => [] as AggregatedChart['notes'][number][number]);
+		const data: AggregatedChart = {
+			categories,
+			seriesNames: ['Other Channel', 'Jeremy Hambly'],
+			values: [empty(), categories.map((name) => (name === 'alligator-gar' ? 4158 : 0))],
+			rawValues: [emptyRaw(), categories.map((name) => (name === 'alligator-gar' ? [4158] : []))],
+			y2Values: [empty(), empty()],
+			y2Category: empty(),
+			hasY2: false,
+			notes: [
+				emptyNotes(),
+				categories.map((name) =>
+					name === 'alligator-gar' ? [{ name: 'gar-clip', path: 'notes/gar.md', y: 4158 }] : [],
+				),
+			],
+			points: [],
+			overall: 4158,
+			calendar: [],
+		};
+		const chartSettings = settings({
+			chartType: 'heatmap',
+			xProperty: 'note.tags',
+			yProperty: 'note.Score',
+			seriesProperty: 'note.Channel',
+			aggregation: 'sum',
+		});
+		const html = formatCategoryTooltip(
+			{ value: [9, 1, 4158], name: 'alligator-gar', seriesName: 'Jeremy Hambly' },
+			data,
+			chartSettings,
+		);
+		assert.match(html, /alligator-gar/);
+		assert.match(html, /Jeremy Hambly/);
+		assert.match(html, /Score 4158/);
+		assert.match(html, /tags alligator-gar/);
+		assert.match(html, /Channel Jeremy Hambly/);
+		assert.equal(html.includes('9.0'), false);
+		assert.equal(html.includes('tags 9'), false);
+		assert.equal(html.includes('Score 1.0'), false);
+		assert.equal(html.includes('1.0'), false);
+		assert.equal(html.includes('Likes'), false);
+		assert.equal(html.includes('Shorts'), false);
+
+		const grouped: AggregatedChart = {
+			...data,
+			rawValues: [emptyRaw(), categories.map((name) => (name === 'alligator-gar' ? [2000, 2158] : []))],
+			notes: [
+				emptyNotes(),
+				categories.map((name) =>
+					name === 'alligator-gar'
+						? [
+								{ name: 'gar-a', path: 'notes/a.md', y: 2158 },
+								{ name: 'gar-b', path: 'notes/b.md', y: 2000 },
+							]
+						: [],
+				),
+			],
+		};
+		const groupHtml = formatCategoryTooltip(
+			{ value: [9, 1, 4158], name: 'alligator-gar', seriesName: 'Jeremy Hambly' },
+			grouped,
+			chartSettings,
+		);
+		assert.match(groupHtml, /gar-a/);
+		assert.match(groupHtml, /gar-b/);
+		assert.match(groupHtml, /Score 4158/);
+		assert.match(groupHtml, /alligator-gar/);
+		assert.match(groupHtml, /Channel Jeremy Hambly/);
+		assert.equal(groupHtml.includes('9.0'), false);
+		assert.equal(groupHtml.includes('Score 1.0'), false);
 	});
 
 	it('escapes note titles so they cannot break the tooltip HTML', () => {

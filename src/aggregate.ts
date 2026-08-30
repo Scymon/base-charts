@@ -136,7 +136,11 @@ export function binCounts(
 	return bins;
 }
 
-export function aggregateRows(rows: RawRow[], settings: ChartSettings): AggregatedChart {
+export function aggregateRows(
+	rows: RawRow[],
+	settings: ChartSettings,
+	extras: { nowMs?: number } = {},
+): AggregatedChart {
 	const excluded = excludedSet(settings);
 	const buckets = new Map<
 		string,
@@ -252,7 +256,7 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 
 	const shouldFill = timeLike && !SKIP_TIME_FILL.has(settings.chartType);
 	const axisCategories = shouldFill
-		? fillTimeCategories(keptPopulated.map((item) => item.category))
+		? fillTimeCategories(keptPopulated.map((item) => item.category), extras.nowMs)
 		: keptPopulated.map((item) => item.category);
 
 	const categoryTotals = axisCategories.map((category) => {

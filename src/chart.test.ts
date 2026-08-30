@@ -14,7 +14,9 @@ import {
 	initialCategoryWindow,
 	icicleLabelVisible,
 	SLIDER_HANDLE_ICON,
+	SLIDER_HANDLE_SIZE,
 	SLIDER_HEIGHT,
+	sliderAreaGradient,
 	logSafeValue,
 	marimekkoWidths,
 	shouldApplyLogY,
@@ -301,6 +303,74 @@ describe('buildChartOption', () => {
 			assert.equal(typeof option.grid, 'object');
 		}
 		assert.ok(CHART_OPTION_REPLACE_MERGE.includes('grid'));
+		assert.ok(CHART_OPTION_REPLACE_MERGE.includes('tooltip'));
+		assert.ok(CHART_OPTION_REPLACE_MERGE.includes('legend'));
+	});
+
+	it('does not let a scatter Likes formatter leak onto a heatmap tags tooltip', () => {
+		const heatRows: RawRow[] = [
+			{
+				xLabels: ['alligator-gar'],
+				seriesLabels: ['Jeremy Hambly'],
+				y: 4158,
+				xNumeric: 9,
+				fileName: 'gar',
+				filePath: 'notes/gar.md',
+			},
+			{
+				xLabels: ['other-tag'],
+				seriesLabels: ['Other'],
+				y: 10,
+				xNumeric: 1,
+				fileName: 'other',
+				filePath: 'notes/other.md',
+			},
+		];
+		const scatterSettings = settings({
+			chartType: 'scatter',
+			xProperty: 'note.Likes',
+			yProperty: 'note.Score',
+		});
+		const heatSettings = settings({
+			chartType: 'heatmap',
+			xProperty: 'note.tags',
+			yProperty: 'note.Score',
+			seriesProperty: 'note.Channel',
+			aggregation: 'sum',
+		});
+		const scatterData = aggregateRows(heatRows, scatterSettings);
+		const heatData = aggregateRows(heatRows, heatSettings);
+		const scatter = buildChartOption(scatterData, scatterSettings, theme, false);
+		const heat = buildChartOption(heatData, heatSettings, theme, false);
+		const scatterFmt = (scatter.tooltip as { formatter?: (params: unknown) => string }).formatter;
+		const heatFmt = (heat.tooltip as { formatter?: (params: unknown) => string }).formatter;
+		assert.equal(typeof scatterFmt, 'function');
+		assert.equal(typeof heatFmt, 'function');
+		assert.notEqual(scatterFmt, heatFmt);
+
+		const xIndex = heatData.categories.indexOf('alligator-gar');
+		const yIndex = heatData.seriesNames.indexOf('Jeremy Hambly');
+		const scatterHtml =
+			scatterFmt?.({
+				name: 'gar',
+				value: [9, 4158],
+				data: { name: 'gar', path: 'notes/gar.md' },
+			}) ?? '';
+		assert.match(scatterHtml, /Likes/);
+
+		const heatHtml =
+			heatFmt?.({
+				value: [xIndex, yIndex, 4158],
+				name: 'alligator-gar',
+				seriesName: 'Jeremy Hambly',
+			}) ?? '';
+		assert.equal(heatHtml.includes('Likes'), false);
+		assert.match(heatHtml, /alligator-gar/);
+		assert.match(heatHtml, /tags alligator-gar/);
+		assert.match(heatHtml, /Score 4158/);
+		assert.match(heatHtml, /Channel Jeremy Hambly/);
+		assert.equal(heatHtml.includes('9.0'), false);
+		assert.equal(heatHtml.includes('Likes 9'), false);
 	});
 
 	it('builds combo with a Y2 line and a second axis', () => {
@@ -476,10 +546,18 @@ describe('buildChartOption', () => {
 			type?: string;
 			height?: number;
 			handleIcon?: string;
+			handleSize?: string | number;
 			fillerColor?: string;
 			handleStyle?: { color?: string };
-			dataBackground?: { lineStyle?: { width?: number } };
-			selectedDataBackground?: { lineStyle?: { width?: number } };
+			yAxisIndex?: number;
+			dataBackground?: {
+				lineStyle?: { width?: number };
+				areaStyle?: { color?: { type?: string; y2?: number; colorStops?: { offset: number; color: string }[] } };
+			};
+			selectedDataBackground?: {
+				lineStyle?: { width?: number };
+				areaStyle?: { color?: { type?: string; colorStops?: { offset: number; color: string }[] } };
+			};
 			showDetail?: boolean;
 			brushSelect?: boolean;
 		}[];
@@ -488,14 +566,40 @@ describe('buildChartOption', () => {
 		const slider = zooms.find((item) => item.type === 'slider');
 		assert.ok(slider);
 		assert.equal(slider?.handleIcon, SLIDER_HANDLE_ICON);
+		assert.match(slider?.handleIcon ?? '', /A50,50|circle/i);
+		assert.equal(slider?.handleIcon?.includes('L8,20'), false);
+		assert.equal(slider?.handleSize, SLIDER_HANDLE_SIZE);
 		assert.ok((slider?.height ?? 0) >= 18 && (slider?.height ?? 0) <= 24);
 		assert.equal(slider?.height, SLIDER_HEIGHT);
 		assert.equal(slider?.showDetail, false);
 		assert.equal(slider?.brushSelect, false);
-		assert.equal(slider?.dataBackground?.lineStyle?.width, 1);
-		assert.equal(slider?.selectedDataBackground?.lineStyle?.width, 1);
-		assert.equal(slider?.fillerColor, colorAlpha(theme.accent, 0.22));
-		assert.equal(slider?.handleStyle?.color, colorAlpha(theme.accent, 0.42));
+		assert.ok((slider?.dataBackground?.lineStyle?.width ?? 0) >= 1);
+		assert.ok((slider?.dataBackground?.lineStyle?.width ?? 0) <= 1.5);
+		assert.ok((slider?.selectedDataBackground?.lineStyle?.width ?? 0) >= 1);
+		assert.equal(slider?.dataBackground?.areaStyle?.color?.type, 'linear');
+		assert.equal(slider?.dataBackground?.areaStyle?.color?.y2, 1);
+		assert.deepEqual(slider?.dataBackground?.areaStyle?.color, sliderAreaGradient(theme.accent, 0.28));
+		assert.deepEqual(slider?.selectedDataBackground?.areaStyle?.color, sliderAreaGradient(theme.accent, 0.38));
+		assert.equal(slider?.fillerColor, colorAlpha(theme.accent, 0.16));
+		assert.equal(slider?.handleStyle?.color, colorAlpha(theme.accent, 0.5));
+		const fade = slider?.dataBackground?.areaStyle?.color?.colorStops ?? [];
+		assert.equal(fade[0]?.color, colorAlpha(theme.accent, 0.28));
+		assert.equal(fade[1]?.color, colorAlpha(theme.accent, 0));
+		assert.ok((fade[1]?.offset ?? 0) > (fade[0]?.offset ?? 1));
+
+		const sideways = buildChartOption(
+			dense,
+			settings({ chartType: 'bar-horizontal', maxCategories: 40 }),
+			theme,
+			false,
+		);
+		const ySlider = (sideways.dataZoom as { type?: string; handleIcon?: string; yAxisIndex?: number; width?: number }[]).find(
+			(item) => item.type === 'slider',
+		);
+		assert.ok(ySlider);
+		assert.equal(ySlider?.handleIcon, SLIDER_HANDLE_ICON);
+		assert.equal(ySlider?.yAxisIndex, 0);
+		assert.equal(ySlider?.width, SLIDER_HEIGHT);
 		const grid = moving.grid as { bottom?: number; containLabel?: boolean };
 		assert.ok((grid.bottom ?? 0) >= 100 + 36);
 		assert.equal(grid.containLabel, true);
@@ -841,8 +945,9 @@ describe('buildChartOption', () => {
 	});
 
 	it('puts a bottom slider on a dense calendar-day area chart', () => {
+		const now = Date.UTC(2026, 7, 30);
 		const days = Array.from({ length: 36 }, (_, index) => {
-			const date = new Date(Date.UTC(2026, 7, 1 + index));
+			const date = new Date(Date.UTC(2026, 5, 1 + index));
 			const label = date.toISOString().slice(0, 10);
 			return {
 				xLabels: [label],
@@ -855,10 +960,11 @@ describe('buildChartOption', () => {
 		const data = aggregateRows(
 			days,
 			settings({ chartType: 'area', aggregation: 'median', sort: 'time-desc', maxCategories: 36 }),
+			{ nowMs: now },
 		);
 		assert.equal(data.categories.length, 36);
-		assert.equal(data.categories[0], '2026-09-05');
-		assert.equal(data.categories[35], '2026-08-01');
+		assert.equal(data.categories[0], '2026-07-06');
+		assert.equal(data.categories[35], '2026-06-01');
 		const option = buildChartOption(
 			data,
 			settings({ chartType: 'area', sort: 'time-desc', maxCategories: 36 }),
@@ -950,5 +1056,8 @@ describe('chart chrome css', () => {
 		assert.match(css, /\.motion-chart-canvas\s*\{[^}]*box-sizing:\s*border-box/s);
 		assert.match(css, /\.motion-chart-tooltip-notes\s*\{[^}]*max-height:\s*280px/s);
 		assert.match(css, /\.motion-chart-tooltip-note-name\s*\{[^}]*word-break:\s*break-word/s);
+		assert.match(css, /\.motion-chart-has-slider::after/);
+		assert.match(css, /\.motion-chart-has-slider-vertical::after/);
+		assert.match(css, /pointer-events:\s*none/);
 	});
 });

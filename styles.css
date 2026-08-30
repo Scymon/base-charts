@@ -24,6 +24,31 @@
 	overflow: hidden;
 }
 
+/* Full-track center axis. ECharts slider has no native midline; the slider
+   itself is canvas-drawn, so this overlay sits on the canvas container. */
+.motion-chart-canvas.motion-chart-has-slider::after,
+.motion-chart-canvas.motion-chart-has-slider-vertical::after {
+	content: '';
+	position: absolute;
+	pointer-events: none;
+	z-index: 1;
+	background: color-mix(in srgb, var(--text-muted, #999) 42%, transparent);
+}
+
+.motion-chart-canvas.motion-chart-has-slider::after {
+	left: var(--motion-slider-start, 48px);
+	right: var(--motion-slider-end, 20px);
+	bottom: var(--motion-slider-mid, 19px);
+	height: 1px;
+}
+
+.motion-chart-canvas.motion-chart-has-slider-vertical::after {
+	top: var(--motion-slider-start, 48px);
+	bottom: var(--motion-slider-end, 20px);
+	right: var(--motion-slider-mid, 19px);
+	width: 1px;
+}
+
 .motion-chart-empty {
 	flex: 1 1 auto;
 	display: flex;

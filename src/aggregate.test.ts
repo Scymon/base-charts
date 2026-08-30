@@ -273,6 +273,28 @@ describe('aggregateRows', () => {
 		assert.deepEqual(result.categories, ['topic-0', 'topic-1', 'topic-2']);
 	});
 
+	it('does not stretch a time axis to W52 when the last real week is W35', () => {
+		const now = Date.UTC(2026, 7, 30);
+		const weeks: RawRow[] = [
+			{ xLabels: ['2025-W22'], seriesLabels: ['east'], y: 8, xNumeric: null, fileName: 'old' },
+			{ xLabels: ['2026-W22'], seriesLabels: ['east'], y: 10, xNumeric: null, fileName: 'a' },
+			{ xLabels: ['2026-W35'], seriesLabels: ['east'], y: 20, xNumeric: null, fileName: 'b' },
+			{ xLabels: ['2026-W52'], seriesLabels: ['east'], y: 1, xNumeric: null, fileName: 'stray' },
+		];
+		const result = aggregateRows(
+			weeks,
+			settings({ chartType: 'area-stacked', aggregation: 'sum', sort: 'time-asc' }),
+			{ nowMs: now },
+		);
+		assert.equal(result.categories[0], '2025-W22');
+		assert.equal(result.categories[result.categories.length - 1], '2026-W35');
+		assert.equal(result.categories.includes('2026-W36'), false);
+		assert.equal(result.categories.includes('2026-W52'), false);
+		assert.equal(result.categories.includes('(empty)'), false);
+		assert.ok(result.categories.includes('2026-W28'));
+		assert.ok(result.categories.length < 83);
+	});
+
 	it('does not invent empty weeks on sankey', () => {
 		const weeks: RawRow[] = [
 			{ xLabels: ['2026-W01'], seriesLabels: ['east'], y: 10, xNumeric: null, fileName: 'a' },
