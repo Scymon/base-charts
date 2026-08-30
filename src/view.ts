@@ -19,6 +19,7 @@ import {
 	SankeyChart,
 	ScatterChart,
 	SunburstChart,
+	ThemeRiverChart,
 	TreemapChart,
 } from 'echarts/charts';
 import {
@@ -26,18 +27,19 @@ import {
 	CalendarComponent,
 	DataZoomComponent,
 	DataZoomInsideComponent,
-	DataZoomSliderComponent,
 	GridComponent,
 	LegendComponent,
+	PolarComponent,
 	RadarComponent,
+	SingleAxisComponent,
 	TooltipComponent,
 	VisualMapComponent,
 } from 'echarts/components';
 import { LabelLayout, UniversalTransition } from 'echarts/features';
 import { CanvasRenderer } from 'echarts/renderers';
 import { aggregateRows } from './aggregate.ts';
-import { buildChartOption } from './chart.ts';
-import { pickOpenNote, resolveClickNotes } from './click.ts';
+import { buildChartOption, categoryWindowHint, ZOOM_AFTER } from './chart.ts';
+import { pickOpenNote, resolveClickNotes, shouldOpenNotesOnClick } from './click.ts';
 import { prefersReducedMotion, readChartTheme } from './theme.ts';
 import {
 	AGGREGATIONS,
@@ -69,6 +71,9 @@ echarts.use([
 	GraphChart,
 	SunburstChart,
 	SankeyChart,
+	ThemeRiverChart,
+	PolarComponent,
+	SingleAxisComponent,
 	GridComponent,
 	TooltipComponent,
 	LegendComponent,
@@ -77,7 +82,6 @@ echarts.use([
 	CalendarComponent,
 	DataZoomComponent,
 	DataZoomInsideComponent,
-	DataZoomSliderComponent,
 	BrushComponent,
 	LabelLayout,
 	UniversalTransition,
@@ -90,6 +94,7 @@ export class MotionChartView extends BasesView {
 	private readonly chartEl: HTMLElement;
 	private readonly emptyEl: HTMLElement;
 	private readonly notesEl: HTMLElement;
+	private readonly hintEl: HTMLElement;
 	private chart: echarts.ECharts | null = null;
 	private resizeObserver: ResizeObserver | null = null;
 	private defaultsApplied = false;
@@ -101,14 +106,19 @@ export class MotionChartView extends BasesView {
 		this.rootEl = parentEl.createDiv('motion-chart-view');
 		this.emptyEl = this.rootEl.createDiv({ cls: 'motion-chart-empty' });
 		this.chartEl = this.rootEl.createDiv({ cls: 'motion-chart-canvas' });
+		this.hintEl = this.rootEl.createDiv({ cls: 'motion-chart-hint' });
 		this.notesEl = this.rootEl.createDiv({ cls: 'motion-chart-notes' });
+		this.hintEl.hide();
 		this.notesEl.hide();
 	}
 
 	onload(): void {
 		this.ensureChart();
-		this.resizeObserver = new ResizeObserver(() => this.chart?.resize());
+		this.resizeObserver = new ResizeObserver(() => {
+			this.chart?.resize({ width: 'auto', height: 'auto' });
+		});
 		this.resizeObserver.observe(this.rootEl);
+		this.resizeObserver.observe(this.chartEl);
 		this.register(() => this.resizeObserver?.disconnect());
 		this.registerEvent(this.app.workspace.on('css-change', () => this.render()));
 		this.registerDomEvent(document, 'pointerdown', (event) => {
@@ -129,12 +139,8 @@ export class MotionChartView extends BasesView {
 	private applyDefaultAxes(): void {
 		if (this.defaultsApplied) return;
 		this.defaultsApplied = true;
-		if (!this.config.getAsPropertyId('yAxis')) {
-			const score = findProperty(this.allProperties, ['Score']);
-			if (score) this.config.set('yAxis', score);
-		}
 		if (!this.config.getAsPropertyId('xAxis')) {
-			const x = findProperty(this.allProperties, ['Source', 'topic', 'tags']) ?? fileNameProperty(this.allProperties);
+			const x = fileNameProperty(this.allProperties);
 			if (x) this.config.set('xAxis', x);
 		}
 	}
@@ -172,9 +178,35 @@ export class MotionChartView extends BasesView {
 		const theme = readChartTheme(this.rootEl);
 		const option = buildChartOption(aggregated, settings, theme, prefersReducedMotion());
 		this.ensureChart().setOption(option, {
-			replaceMerge: ['series', 'xAxis', 'yAxis', 'radar', 'calendar', 'visualMap', 'dataZoom'],
+			replaceMerge: [
+				'series',
+				'xAxis',
+				'yAxis',
+				'radar',
+				'calendar',
+				'visualMap',
+				'dataZoom',
+				'polar',
+				'angleAxis',
+				'radiusAxis',
+				'singleAxis',
+			],
 		});
-		this.chart?.resize();
+		this.chart?.resize({ width: 'auto', height: 'auto' });
+		this.updateHint(aggregated);
+	}
+
+	private updateHint(data: AggregatedChart): void {
+		const total = data.categories.length;
+		const visible = Math.min(total, 16);
+		const text = categoryWindowHint(visible, total);
+		if (!text) {
+			this.hintEl.hide();
+			this.hintEl.setText('');
+			return;
+		}
+		this.hintEl.setText(text);
+		this.hintEl.show();
 	}
 
 	private ensureChart(): echarts.ECharts {
@@ -184,12 +216,26 @@ export class MotionChartView extends BasesView {
 		if (!this.clickBound && this.chart) {
 			this.clickBound = true;
 			this.chart.on('click', (params) => this.onChartClick(params as ClickPayload));
+			this.chart.getZr().on('click', (event) => {
+				if (!event.target) this.hideNotes();
+			});
+			this.chart.on('datazoom', (raw) => {
+				const ev = raw as { start?: number; end?: number; batch?: { start?: number; end?: number }[] };
+				const start = ev.start ?? ev.batch?.[0]?.start ?? 0;
+				const end = ev.end ?? ev.batch?.[0]?.end ?? 100;
+				const total = this.lastData?.categories.length ?? 0;
+				if (total < ZOOM_AFTER) return;
+				const shown = Math.max(1, Math.round(((end - start) / 100) * total));
+				const text = categoryWindowHint(shown, total);
+				if (text) this.hintEl.setText(text);
+			});
 		}
 		return this.chart;
 	}
 
 	private onChartClick(payload: ClickPayload): void {
 		if (!this.lastData) return;
+		if (!shouldOpenNotesOnClick(payload)) return;
 		const notes = resolveClickNotes(this.lastData, payload);
 		const top = pickOpenNote(notes);
 		if (!top) return;
@@ -225,6 +271,7 @@ export class MotionChartView extends BasesView {
 	private showEmpty(message: string): void {
 		this.chartEl.hide();
 		this.notesEl.hide();
+		this.hintEl.hide();
 		this.emptyEl.show();
 		this.emptyEl.setText(message);
 	}

@@ -46,7 +46,7 @@ Any base with a **category** (text, list, or date) and a **number** works. Pick 
 2. Set **X-axis** to a category, list, or date.
 3. Set **Y-axis** to a numeric property.
 4. Set **Aggregation** to **Median** or **Average** when a few large numbers would dominate a sum.
-5. Set **Chart type** to **Bar**. Switch to **Lollipop** when the category list is long, **Boxplot** or **Dumbbell** for the raw spread in each category, **Combo** for a second metric on Y2, or **Log Y** when the range is wide.
+5. Set **Chart type** to **Bar**. Switch to **Lollipop** when the category list is long, **Boxplot** or **Dumbbell** for the raw spread in each category, **Combo** for a second metric on Y2, or **Log Y** when the range is wide. **Stacked area**, **percent stacked bar**, **step line**, **polar bar**, **streamgraph**, and **waffle** use the same X / Y / series-by settings.
 
 Click a bar, slice, box, combo bar, or sankey node to open a note from that category. One match opens immediately; several open the highest-Y note and list the other titles.
 
@@ -67,15 +67,15 @@ Junk list labels (`viral`, `viral-video`, and similar) stay excluded by default;
 
 | Setting | Notes |
 | --- | --- |
-| Chart type | Bar, horizontal bar, stacked bar, **combo**, **lollipop**, line, area, pie, doughnut, nightingale, scatter, heatmap, calendar heatmap, boxplot, **dumbbell**, **ridgeline**, packed bubbles, radar, gauge, treemap, sunburst, funnel, waterfall, sankey, **chord** |
+| Chart type | Bar, horizontal bar, stacked bar, **percent stacked bar**, **combo**, **lollipop**, line, **step line**, area, **stacked area**, pie, doughnut, nightingale, scatter, heatmap, calendar heatmap, boxplot, **dumbbell**, **ridgeline**, packed bubbles, radar, gauge, **treemap**, sunburst, funnel, waterfall, sankey, **chord**, **polar bar**, **streamgraph**, **waffle** |
 | X-axis | Any note, file, or formula property (category or time). Calendar heatmap needs a date property or `file.ctime` |
-| Y-axis | A numeric property. If a property named `Score` exists on the current base, it is preselected |
+| Y-axis | Any numeric property you pick |
 | Y2-axis | Combo only. Any second numeric property. Rendered as a line on a second axis; omitted when empty |
 | Aggregation | Count, sum, average, **median**. Default is median, not sum. Boxplot and dumbbell use the raw Y values in each category |
 | Series by | Optional split |
 | Filter empty Y values | On by default |
 | Sort | By value or label |
-| Max categories | Caps busy category charts. Dense cartesian charts also get an inside + slider zoom |
+| Max categories | Caps busy category charts. Dense cartesian charts (12+ categories) get inside zoom (wheel + drag) and an “N of M categories” hint — no slider |
 | Exclude tags | Applied when the X-axis or series is a list |
 | Log Y | Display toggle. Logarithmic scale on cartesian value axes; zeros/negatives are skipped so the chart does not crash |
 | Legend / data labels / grid | Display toggles |

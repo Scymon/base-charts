@@ -65,3 +65,12 @@ export function resolveClickNotes(data: AggregatedChart, payload: ClickPayload):
 	}
 	return notesByName(data, name);
 }
+
+/** Parents zoom; leaves (or modifier-click) still open notes. */
+export function shouldOpenNotesOnClick(payload: ClickPayload): boolean {
+	const children = payload.data?.children;
+	const parent = Array.isArray(children) && children.length > 0;
+	if (!parent) return true;
+	const key = payload.event?.event;
+	return Boolean(key?.ctrlKey || key?.metaKey || key?.altKey);
+}

@@ -8,10 +8,13 @@ const CARTESIAN_TYPES = new Set<ChartSettings['chartType']>([
 	'bar',
 	'bar-horizontal',
 	'bar-stacked',
+	'bar-percent',
 	'combo',
 	'lollipop',
 	'line',
+	'line-step',
 	'area',
+	'area-stacked',
 	'scatter',
 	'heatmap',
 	'boxplot',
@@ -27,7 +30,9 @@ const LOG_Y_TYPES = new Set<ChartSettings['chartType']>([
 	'combo',
 	'lollipop',
 	'line',
+	'line-step',
 	'area',
+	'area-stacked',
 	'scatter',
 	'boxplot',
 	'dumbbell',
@@ -37,16 +42,20 @@ const ZOOM_TYPES = new Set<ChartSettings['chartType']>([
 	'bar',
 	'bar-horizontal',
 	'bar-stacked',
+	'bar-percent',
 	'combo',
 	'lollipop',
 	'line',
+	'line-step',
 	'area',
+	'area-stacked',
 	'boxplot',
 	'dumbbell',
 	'waterfall',
 ]);
 
-const ZOOM_AFTER = 12;
+export const ZOOM_AFTER = 12;
+export const TREEMAP_LABEL_MIN_SHOW = 16;
 
 export function usesCartesianGrid(chartType: ChartSettings['chartType']): boolean {
 	return CARTESIAN_TYPES.has(chartType);
@@ -133,10 +142,71 @@ function categoryAxisLabel(theme: ChartTheme, placement: 'bottom' | 'left') {
 	};
 }
 
-function cartesianGrid(horizontal: boolean, extra: { right?: number; bottom?: number } = {}) {
-	return horizontal
-		? { top: 40, right: extra.right ?? 24, bottom: extra.bottom ?? 32, left: 28, containLabel: true }
-		: { top: 40, right: extra.right ?? 24, bottom: extra.bottom ?? 120, left: 16, containLabel: true };
+/** Reserve space so 45° labels and chrome stay inside the canvas. */
+export function categoryAxisPad(categories: string[], placement: 'bottom' | 'left') {
+	const longest = categories.reduce((max, label) => Math.max(max, [...String(label)].length), 1);
+	const glyph = 7;
+	const font = 12;
+	if (placement === 'left') {
+		return {
+			top: 40,
+			right: 24,
+			bottom: 36,
+			left: Math.min(168, Math.max(64, Math.ceil(longest * glyph + 20))),
+		};
+	}
+	const textW = longest * glyph;
+	const depth = Math.ceil(textW * Math.SQRT1_2 + font * Math.SQRT1_2 + 20);
+	const jut = Math.ceil(font * Math.SQRT1_2 + 18);
+	return {
+		top: 40,
+		right: Math.min(64, Math.max(28, jut)),
+		bottom: Math.min(176, Math.max(100, depth)),
+		left: 16,
+	};
+}
+
+function cartesianGrid(
+	horizontal: boolean,
+	categories: string[],
+	extra: { right?: number; bottom?: number; left?: number; top?: number } = {},
+) {
+	const pad = categoryAxisPad(categories, horizontal ? 'left' : 'bottom');
+	return {
+		top: extra.top ?? pad.top,
+		right: extra.right ?? pad.right,
+		bottom: extra.bottom ?? pad.bottom,
+		left: extra.left ?? pad.left,
+		containLabel: true,
+	};
+}
+
+export function categoryWindowHint(visible: number, total: number): string | null {
+	if (total < ZOOM_AFTER) return null;
+	return `${visible} of ${total} categories`;
+}
+
+export function treemapLabelLayout(params: { rect?: { width?: number; height?: number } }) {
+	const width = params.rect?.width ?? 0;
+	const height = params.rect?.height ?? 0;
+	if (width < 36 || height < TREEMAP_LABEL_MIN_SHOW) {
+		return { fontSize: 0, width: 0, height: 0 };
+	}
+	return {
+		fontSize: height >= 36 && width >= 72 ? 12 : 11,
+		width: Math.max(0, width - 8),
+	};
+}
+
+export function treemapLabelFormatter(
+	params: { name?: string; value?: unknown },
+	valueFloor: number,
+): string {
+	const name = String(params.name ?? '');
+	const raw = Array.isArray(params.value) ? params.value[0] : params.value;
+	const value = Number(raw) || 0;
+	if (value >= valueFloor) return `${name}\n${formatNumber(value)}`;
+	return name;
 }
 
 function labelStyle(theme: ChartTheme, show: boolean) {
@@ -149,9 +219,11 @@ function labelStyle(theme: ChartTheme, show: boolean) {
 function tooltipBase(theme: ChartTheme) {
 	return {
 		trigger: 'axis' as const,
+		confine: true,
 		backgroundColor: theme.panel,
 		borderColor: theme.border,
 		textStyle: { color: theme.text },
+		extraCssText: 'max-width:min(280px,80%);max-height:40%;overflow:auto;',
 	};
 }
 
@@ -193,16 +265,12 @@ function valueAxisOption(theme: ChartTheme, showGrid: boolean, logY: boolean, ex
 	};
 }
 
-function dataZoomOption(
-	data: AggregatedChart,
-	settings: ChartSettings,
-	reduceMotion: boolean,
-	horizontal: boolean,
-) {
+function dataZoomOption(data: AggregatedChart, settings: ChartSettings, horizontal: boolean) {
 	if (!ZOOM_TYPES.has(settings.chartType) || data.categories.length < ZOOM_AFTER) {
-		return { dataZoom: undefined, extraBottom: 0, extraRight: 0 };
+		return { dataZoom: undefined, windowSize: data.categories.length };
 	}
-	const window = Math.min(100, (16 / data.categories.length) * 100);
+	const windowSize = Math.min(data.categories.length, 16);
+	const end = Math.min(100, (windowSize / data.categories.length) * 100);
 	const axis = horizontal ? { yAxisIndex: 0 } : { xAxisIndex: 0 };
 	return {
 		dataZoom: [
@@ -212,30 +280,23 @@ function dataZoomOption(
 				filterMode: 'filter' as const,
 				zoomOnMouseWheel: true,
 				moveOnMouseMove: true,
+				preventDefaultMouseMove: true,
 				start: 0,
-				end: window,
-			},
-			{
-				type: 'slider' as const,
-				...axis,
-				filterMode: 'filter' as const,
-				start: 0,
-				end: window,
-				height: horizontal ? undefined : 16,
-				width: horizontal ? 16 : undefined,
-				bottom: horizontal ? 24 : 8,
-				right: horizontal ? 8 : 24,
-				borderColor: 'transparent',
-				fillerColor: 'rgba(127,127,127,0.18)',
-				handleStyle: { color: '#888' },
-				textStyle: { color: '#999' },
-				realtime: true,
-				animation: !reduceMotion,
+				end,
 			},
 		],
-		extraBottom: horizontal ? 0 : 28,
-		extraRight: horizontal ? 20 : 0,
+		windowSize,
 	};
+}
+
+function toPercents(data: AggregatedChart): number[][] {
+	const totals = categoryTotals(data);
+	return data.values.map((series) =>
+		series.map((value, index) => {
+			const total = totals[index] ?? 0;
+			return total > 0 ? (value / total) * 100 : 0;
+		}),
+	);
 }
 
 export function buildChartOption(
@@ -256,11 +317,17 @@ export function buildChartOption(
 				settings.chartType === 'rose' ||
 				settings.chartType === 'funnel' ||
 				settings.chartType === 'sunburst' ||
+				settings.chartType === 'waffle' ||
+				settings.chartType === 'streamgraph' ||
 				(settings.chartType === 'combo' && data.hasY2) ||
 				settings.chartType === 'ridgeline'),
 		textStyle: { color: theme.muted },
 		type: 'scroll' as const,
 		top: 0,
+		left: 'center',
+		width: '86%',
+		pageIconColor: theme.muted,
+		pageTextStyle: { color: theme.muted },
 	};
 
 	if (settings.chartType === 'gauge') {
@@ -319,42 +386,107 @@ export function buildChartOption(
 
 	if (settings.chartType === 'treemap' || settings.chartType === 'sunburst') {
 		const nested = nestHierarchy(data);
+		const totals = categoryTotals(data);
+		const max = Math.max(1, ...totals);
+		const valueFloor = max * 0.12;
+		const nestedLevels = data.seriesNames.length > 1;
+		const leafBorder = theme.primary || theme.background;
+		if (settings.chartType === 'sunburst') {
+			return {
+				...anim,
+				backgroundColor: theme.background,
+				color: colors,
+				legend,
+				tooltip: categoryTooltip(theme, data, settings, 'item'),
+				series: [
+					{
+						type: 'sunburst',
+						radius: ['12%', '78%'],
+						data: nested,
+						minAngle: 2,
+						label: {
+							...labelStyle(theme, true),
+							minAngle: 8,
+							overflow: 'truncate',
+							ellipsis: '…',
+						},
+						itemStyle: { borderColor: leafBorder, borderWidth: 1 },
+						...motion(reduceMotion, 'sunburst'),
+					},
+				],
+			};
+		}
 		return {
 			...anim,
 			backgroundColor: theme.background,
 			color: colors,
-			legend,
 			tooltip: categoryTooltip(theme, data, settings, 'item'),
+			visualMap: {
+				type: 'continuous',
+				min: 0,
+				max,
+				show: false,
+				inRange: { color: [theme.border, theme.accent] },
+			},
 			series: [
-				settings.chartType === 'sunburst'
-					? {
-							type: 'sunburst',
-							radius: ['12%', '78%'],
-							data: nested,
-							label: { ...labelStyle(theme, true), minAngle: 4 },
-							itemStyle: { borderColor: theme.background, borderWidth: 1 },
-							...motion(reduceMotion, 'sunburst'),
-						}
-					: {
-							type: 'treemap',
-							roam: false,
-							nodeClick: false,
-							breadcrumb: { show: false },
-							left: 8,
-							right: 8,
-							top: 8,
-							bottom: 8,
-							levels: [
-								{
-									itemStyle: { borderColor: theme.background, borderWidth: 3, gapWidth: 3 },
-									upperLabel: { show: data.seriesNames.length > 1, color: theme.text },
-								},
-								{ itemStyle: { gapWidth: 1, borderColor: theme.background } },
-							],
-							label: { ...labelStyle(theme, true), formatter: '{b}\n{c}' },
-							data: nested,
-							...motion(reduceMotion, 'treemap'),
+				{
+					type: 'treemap',
+					roam: true,
+					nodeClick: 'zoomToNode',
+					squareRatio: 1,
+					leafDepth: nestedLevels ? 2 : 1,
+					visualDimension: 0,
+					colorMappingBy: 'value',
+					left: 4,
+					right: 4,
+					top: 8,
+					bottom: 28,
+					breadcrumb: {
+						show: true,
+						left: 8,
+						bottom: 0,
+						height: 22,
+						itemStyle: {
+							color: theme.panel,
+							borderColor: theme.border,
+							shadowBlur: 0,
+							textStyle: { color: theme.text },
 						},
+						emphasis: {
+							itemStyle: {
+								color: theme.accent,
+								textStyle: { color: theme.text },
+							},
+						},
+					},
+					levels: [
+						{
+							colorMappingBy: 'value',
+							itemStyle: { borderColor: leafBorder, borderWidth: 2, gapWidth: 2 },
+							upperLabel: {
+								show: nestedLevels,
+								color: theme.text,
+								height: 18,
+								overflow: 'truncate',
+								ellipsis: '…',
+							},
+						},
+						{
+							colorMappingBy: 'value',
+							itemStyle: { gapWidth: 1, borderColor: leafBorder, borderWidth: 1 },
+						},
+					],
+					label: {
+						...labelStyle(theme, true),
+						formatter: (params) => treemapLabelFormatter(params, valueFloor),
+						overflow: 'truncate',
+						ellipsis: '…',
+						fontSize: 11,
+					},
+					labelLayout: treemapLabelLayout,
+					data: nested,
+					...motion(reduceMotion, 'treemap'),
+				},
 			],
 		};
 	}
@@ -501,6 +633,122 @@ export function buildChartOption(
 		};
 	}
 
+	if (settings.chartType === 'streamgraph') {
+		const river: [string, number, string][] = data.seriesNames.flatMap((series, seriesIndex) =>
+			data.categories.map(
+				(category, index): [string, number, string] => [
+					category,
+					data.values[seriesIndex]?.[index] ?? 0,
+					series,
+				],
+			),
+		);
+		return {
+			...anim,
+			backgroundColor: theme.background,
+			color: colors,
+			legend,
+			tooltip: categoryTooltip(theme, data, settings, 'item'),
+			singleAxis: {
+				type: 'category',
+				data: data.categories,
+				top: 48,
+				bottom: categoryAxisPad(data.categories, 'bottom').bottom,
+				left: 24,
+				right: 24,
+				axisLabel: categoryAxisLabel(theme, 'bottom'),
+				axisLine: { lineStyle: { color: theme.border } },
+				axisTick: { lineStyle: { color: theme.border } },
+			},
+			series: [
+				{
+					type: 'themeRiver',
+					data: river,
+					label: { show: false },
+					...motion(reduceMotion, 'streamgraph'),
+				},
+			],
+		};
+	}
+
+	if (settings.chartType === 'bar-polar') {
+		return {
+			...anim,
+			backgroundColor: theme.background,
+			color: colors,
+			legend,
+			tooltip: categoryTooltip(theme, data, settings, 'item'),
+			polar: { radius: ['18%', '78%'] },
+			angleAxis: {
+				type: 'category',
+				data: data.categories,
+				startAngle: 90,
+				axisLabel: { color: theme.muted, interval: 0, hideOverlap: true },
+				axisLine: { lineStyle: { color: theme.border } },
+			},
+			radiusAxis: {
+				type: 'value',
+				axisLabel: { color: theme.muted, formatter: formatAxisTick },
+				splitLine: { lineStyle: { color: theme.border, opacity: 0.45 } },
+			},
+			series: data.seriesNames.map((name, seriesIndex) => ({
+				name,
+				type: 'bar',
+				coordinateSystem: 'polar',
+				stack: data.seriesNames.length > 1 ? 'total' : undefined,
+				data: namedValues(data.categories, data.values[seriesIndex] ?? []),
+				...motion(reduceMotion, name),
+			})),
+		};
+	}
+
+	if (settings.chartType === 'waffle') {
+		const totals = categoryTotals(data);
+		const cells = waffleCells(data.categories, totals, colors);
+		return {
+			...anim,
+			backgroundColor: theme.background,
+			color: colors,
+			legend: { ...legend, data: data.categories },
+			tooltip: categoryTooltip(theme, data, settings, 'item'),
+			grid: { top: 40, right: 16, bottom: 16, left: 16, containLabel: false },
+			xAxis: { type: 'value', min: -0.5, max: 9.5, show: false },
+			yAxis: { type: 'value', min: -0.5, max: 9.5, show: false },
+			series: [
+				{
+					type: 'custom',
+					coordinateSystem: 'cartesian2d',
+					data: cells,
+					encode: { x: 0, y: 1 },
+					renderItem: (_params, api) => {
+						const x = Number(api.value(0));
+						const y = Number(api.value(1));
+						const sized = api.size?.([1, 1]);
+						const size = Array.isArray(sized) ? sized : [16, 16];
+						const gap = 3;
+						const point = api.coord([x, y]);
+						const width = Math.max(2, Number(size[0] ?? 16) - gap);
+						const height = Math.max(2, Number(size[1] ?? 16) - gap);
+						return {
+							type: 'rect',
+							shape: {
+								x: (point[0] ?? 0) - width / 2,
+								y: (point[1] ?? 0) - height / 2,
+								width,
+								height,
+								r: 2,
+							},
+							style: {
+								fill: api.visual('color') as string,
+							},
+						};
+					},
+					...motion(reduceMotion, 'waffle'),
+				},
+			],
+		};
+	}
+
 	if (settings.chartType === 'calendar' && data.calendar.length > 0) {
 		const dates = data.calendar.map((cell) => cell.date);
 		const max = Math.max(1, ...data.calendar.map((cell) => cell.value));
@@ -554,7 +802,17 @@ export function buildChartOption(
 			backgroundColor: theme.background,
 			color: colors,
 			tooltip: { ...tooltipBase(theme), trigger: 'item' },
-			grid: { top: 40, right: 24, bottom: 120, left: 72, containLabel: true },
+			grid: (() => {
+				const xPad = categoryAxisPad(data.categories, 'bottom');
+				const yPad = categoryAxisPad(data.seriesNames, 'left');
+				return {
+					top: 40,
+					right: xPad.right,
+					bottom: xPad.bottom + 40,
+					left: Math.max(yPad.left, 72),
+					containLabel: true,
+				};
+			})(),
 			xAxis: {
 				type: 'category',
 				data: data.categories,
@@ -588,7 +846,7 @@ export function buildChartOption(
 	}
 
 	if (settings.chartType === 'boxplot') {
-		const zoom = dataZoomOption(data, settings, reduceMotion, false);
+		const zoom = dataZoomOption(data, settings, false);
 		const series: SeriesOption[] = data.seriesNames.map((name, seriesIndex) => ({
 			name,
 			type: 'boxplot',
@@ -610,7 +868,7 @@ export function buildChartOption(
 				formatter: (params: unknown) =>
 					`${formatBoxTooltip(params)}<br/>${formatCategoryTooltip(params, data, settings)}`,
 			},
-			grid: cartesianGrid(false, { bottom: 120 + zoom.extraBottom }),
+			grid: cartesianGrid(false, data.categories),
 			dataZoom: zoom.dataZoom,
 			xAxis: {
 				type: 'category',
@@ -624,7 +882,7 @@ export function buildChartOption(
 	}
 
 	if (settings.chartType === 'dumbbell') {
-		const zoom = dataZoomOption(data, settings, reduceMotion, false);
+		const zoom = dataZoomOption(data, settings, false);
 		const series: SeriesOption[] = data.seriesNames.map((name, seriesIndex) => ({
 			name,
 			type: 'custom',
@@ -685,7 +943,7 @@ export function buildChartOption(
 			color: colors,
 			legend,
 			tooltip: categoryTooltip(theme, data, settings, 'item'),
-			grid: cartesianGrid(false, { bottom: 120 + zoom.extraBottom }),
+			grid: cartesianGrid(false, data.categories),
 			dataZoom: zoom.dataZoom,
 			xAxis: {
 				type: 'category',
@@ -729,7 +987,7 @@ export function buildChartOption(
 			color: colors,
 			legend,
 			tooltip: { ...tooltipBase(theme), trigger: 'axis' },
-			grid: cartesianGrid(false, { bottom: 48 }),
+			grid: cartesianGrid(false, data.categories, { bottom: 48 }),
 			xAxis: {
 				type: 'value',
 				...axisCommon(theme, settings.showGrid),
@@ -744,14 +1002,14 @@ export function buildChartOption(
 	}
 
 	if (settings.chartType === 'scatter') {
-		const zoom = dataZoomOption(data, settings, reduceMotion, false);
+		const zoom = dataZoomOption(data, settings, false);
 		return {
 			...anim,
 			backgroundColor: theme.background,
 			color: colors,
 			legend,
 			tooltip: { ...tooltipBase(theme), trigger: 'item' },
-			grid: cartesianGrid(false, { bottom: 120 + zoom.extraBottom }),
+			grid: cartesianGrid(false, data.categories),
 			dataZoom: zoom.dataZoom,
 			xAxis: {
 				type: typeof data.points[0]?.x === 'number' ? 'value' : 'category',
@@ -785,13 +1043,13 @@ export function buildChartOption(
 			running += value;
 			return base;
 		});
-		const zoom = dataZoomOption(data, settings, reduceMotion, false);
+		const zoom = dataZoomOption(data, settings, false);
 		return {
 			...anim,
 			backgroundColor: theme.background,
 			color: colors,
 			tooltip: categoryTooltip(theme, data, settings),
-			grid: cartesianGrid(false, { bottom: 120 + zoom.extraBottom }),
+			grid: cartesianGrid(false, data.categories),
 			dataZoom: zoom.dataZoom,
 			xAxis: {
 				type: 'category',
@@ -826,29 +1084,52 @@ export function buildChartOption(
 
 	const horizontal = settings.chartType === 'bar-horizontal';
 	const stacked = settings.chartType === 'bar-stacked';
+	const percent = settings.chartType === 'bar-percent';
 	const combo = settings.chartType === 'combo';
 	const lollipop = settings.chartType === 'lollipop';
-	const zoom = dataZoomOption(data, settings, reduceMotion, horizontal);
-	const extraRight = (combo && data.hasY2 ? 48 : 0) + zoom.extraRight;
+	const stackedArea = settings.chartType === 'area-stacked';
+	const stepLine = settings.chartType === 'line-step';
+	const zoom = dataZoomOption(data, settings, horizontal);
+	const extraRight = combo && data.hasY2 ? 48 : 0;
+	const percents = percent ? toPercents(data) : null;
 	const categoryAxis = {
 		type: 'category' as const,
 		data: data.categories,
 		...axisCommon(theme, settings.showGrid && !horizontal),
 		axisLabel: categoryAxisLabel(theme, horizontal ? 'left' : 'bottom'),
 	};
-	const valueAxis = valueAxisOption(theme, settings.showGrid, logY);
+	const valueAxis = percent
+		? valueAxisOption(theme, settings.showGrid, false, {
+				max: 100,
+				axisLabel: {
+					color: theme.muted,
+					formatter: (value: number) => `${formatAxisTick(Number(value))}%`,
+				},
+			})
+		: valueAxisOption(theme, settings.showGrid, logY);
 
 	const series: SeriesOption[] = [];
 	data.seriesNames.forEach((name, seriesIndex) => {
-		const seriesData = namedCategoryData(data.categories, data.values[seriesIndex] ?? [], logY);
-		if (settings.chartType === 'line' || settings.chartType === 'area') {
+		const seriesValues = percents?.[seriesIndex] ?? data.values[seriesIndex] ?? [];
+		const seriesData = namedCategoryData(data.categories, seriesValues, logY && !percent);
+		if (
+			settings.chartType === 'line' ||
+			settings.chartType === 'area' ||
+			stackedArea ||
+			stepLine
+		) {
 			series.push({
 				name,
 				type: 'line',
 				data: seriesData,
-				smooth: 0.2,
+				stack: stackedArea ? 'total' : undefined,
+				step: stepLine ? 'middle' : undefined,
+				smooth: stepLine ? 0 : 0.2,
 				showSymbol: settings.showLabels,
-				areaStyle: settings.chartType === 'area' ? { opacity: 0.22 } : undefined,
+				areaStyle:
+					settings.chartType === 'area' || stackedArea
+						? { opacity: stackedArea ? 0.55 : 0.22 }
+						: undefined,
 				label: labelStyle(theme, settings.showLabels),
 				...motion(reduceMotion, name),
 			});
@@ -878,7 +1159,7 @@ export function buildChartOption(
 		series.push({
 			name,
 			type: 'bar',
-			stack: stacked ? 'total' : undefined,
+			stack: stacked || percent ? 'total' : undefined,
 			data: seriesData,
 			label: {
 				...labelStyle(theme, settings.showLabels),
@@ -924,9 +1205,8 @@ export function buildChartOption(
 		color: colors,
 		legend,
 		tooltip: categoryTooltip(theme, data, settings),
-		grid: cartesianGrid(horizontal, {
+		grid: cartesianGrid(horizontal, data.categories, {
 			right: extraRight || undefined,
-			bottom: (horizontal ? 32 : 120) + zoom.extraBottom,
 		}),
 		dataZoom: zoom.dataZoom,
 		xAxis: horizontal ? valueAxis : categoryAxis,
@@ -937,12 +1217,52 @@ export function buildChartOption(
 
 function nestHierarchy(data: AggregatedChart) {
 	if (data.seriesNames.length > 1) {
-		return data.seriesNames.map((series, seriesIndex) => ({
-			name: series,
-			children: namedValues(data.categories, data.values[seriesIndex] ?? []),
-		}));
+		return data.seriesNames.map((series, seriesIndex) => {
+			const children = namedValues(data.categories, data.values[seriesIndex] ?? []);
+			return {
+				name: series,
+				value: children.reduce((sum, child) => sum + (child.value ?? 0), 0),
+				children,
+			};
+		});
 	}
 	return namedValues(data.categories, categoryTotals(data));
+}
+
+function waffleCells(categories: string[], totals: number[], colors: string[]) {
+	const cols = 10;
+	const rows = 10;
+	const target = cols * rows;
+	const grand = totals.reduce((sum, value) => sum + Math.max(0, value), 0) || 1;
+	const raw = totals.map((value) => (Math.max(0, value) / grand) * target);
+	const counts = raw.map((value) => Math.floor(value));
+	let used = counts.reduce((sum, value) => sum + value, 0);
+	const remainders = raw
+		.map((value, index) => ({ index, rem: value - (counts[index] ?? 0) }))
+		.sort((a, b) => b.rem - a.rem);
+	for (const item of remainders) {
+		if (used >= target) break;
+		counts[item.index] = (counts[item.index] ?? 0) + 1;
+		used += 1;
+	}
+	const cells: { name: string; value: [number, number, number]; itemStyle: { color: string } }[] = [];
+	let cursor = 0;
+	categories.forEach((name, index) => {
+		const count = counts[index] ?? 0;
+		const color = colors[index % colors.length] ?? colors[0] ?? '#70b8ff';
+		const amount = totals[index] ?? 0;
+		for (let i = 0; i < count; i += 1) {
+			const col = cursor % cols;
+			const row = rows - 1 - Math.floor(cursor / cols);
+			cells.push({
+				name,
+				value: [col, row, amount],
+				itemStyle: { color },
+			});
+			cursor += 1;
+		}
+	});
+	return cells;
 }
 
 function formatBoxTooltip(params: unknown): string {
