@@ -80,9 +80,13 @@ const ZOOM_TYPES = new Set<ChartSettings['chartType']>([
 export const ZOOM_AFTER = 12;
 export const ZOOM_WINDOW = 16;
 export const SLIDER_HEIGHT = 10;
-export const SLIDER_RESERVE = 36;
 /** Bottom (horizontal slider) / right (vertical slider) inset from the canvas edge. */
 export const SLIDER_EDGE = 8;
+/**
+ * Extra grid inset so a containLabel box clears the slider track.
+ * Labels live inside the grid (containLabel); this is slider chrome only.
+ */
+export const SLIDER_RESERVE = SLIDER_EDGE + SLIDER_HEIGHT + 4;
 /** Left (horizontal) / top (vertical) inset so the track clears axis labels. */
 export const SLIDER_START = 48;
 /** Right (horizontal) / bottom (vertical) inset. */
@@ -271,10 +275,15 @@ function cartesianGrid(
 	} = {},
 ) {
 	const pad = categoryAxisPad(categories, horizontal ? 'left' : 'bottom');
+	// containLabel already parks 45° x labels inside the grid box. Using
+	// pad.bottom (a 100–176px label well) here stacks a second reservation
+	// under the labels, so the plot shrinks and a black band opens above
+	// the slider. Default bottom is 0; addBottom is slider clearance only.
+	const baseBottom = extra.bottom ?? (horizontal ? pad.bottom : 0);
 	return {
 		top: extra.top ?? pad.top,
 		right: (extra.right ?? pad.right) + (extra.addRight ?? 0),
-		bottom: (extra.bottom ?? pad.bottom) + (extra.addBottom ?? 0),
+		bottom: baseBottom + (extra.addBottom ?? 0),
 		left: extra.left ?? pad.left,
 		containLabel: true,
 	};
