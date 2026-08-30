@@ -163,6 +163,8 @@ function labelAggregation(value: string): string {
 }
 
 function labelSort(value: string): string {
+	if (value === 'time-asc') return 'Time (old → new)';
+	if (value === 'time-desc') return 'Time (new → old)';
 	if (value === 'value-asc') return 'Value (low to high)';
 	if (value === 'label-asc') return 'Label (A–Z)';
 	if (value === 'label-desc') return 'Label (Z–A)';

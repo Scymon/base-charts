@@ -1,5 +1,25 @@
 import { isExcludedLabel, normalizeTag } from './labels.ts';
-import type { AggregatedChart, BoxFive, CalendarCell, CategoryNote, ChartSettings, RawRow, ScatterPoint } from './types.ts';
+import {
+	compareTimeLabels,
+	fillTimeCategories,
+	hasTimeCategories,
+	parseChartDate,
+	resolveCategorySort,
+} from './time.ts';
+import type {
+	AggregatedChart,
+	BoxFive,
+	CalendarCell,
+	CategoryNote,
+	ChartSettings,
+	RawRow,
+	ScatterPoint,
+	SortMode,
+} from './types.ts';
+
+export { parseChartDate } from './time.ts';
+
+const SKIP_TIME_FILL = new Set<ChartSettings['chartType']>(['sankey', 'chord', 'network', 'bar-race']);
 
 export function median(values: number[]): number {
 	if (values.length === 0) return 0;
@@ -44,16 +64,17 @@ export function boxFive(values: number[]): BoxFive | null {
 	];
 }
 
-export function parseChartDate(label: string): string | null {
-	const iso = label.match(/^(\d{4}-\d{2}-\d{2})/);
-	if (iso?.[1]) return iso[1];
-	const parsed = Date.parse(label);
-	if (!Number.isFinite(parsed)) return null;
-	const date = new Date(parsed);
-	if (Number.isNaN(date.getTime())) return null;
-	const year = date.getUTCFullYear();
-	if (year < 1990 || year > 2100) return null;
-	return date.toISOString().slice(0, 10);
+function compareCategories(
+	a: { category: string; total: number },
+	b: { category: string; total: number },
+	sort: SortMode,
+): number {
+	if (sort === 'time-asc') return compareTimeLabels(a.category, b.category);
+	if (sort === 'time-desc') return compareTimeLabels(b.category, a.category);
+	if (sort === 'label-asc') return a.category.localeCompare(b.category);
+	if (sort === 'label-desc') return b.category.localeCompare(a.category);
+	if (sort === 'value-asc') return a.total - b.total;
+	return b.total - a.total;
 }
 
 function excludedSet(settings: ChartSettings): Set<string> {
@@ -174,10 +195,10 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 		}
 	}
 
-	const categories: string[] = [];
+	const populated: string[] = [];
 	const seriesNames: string[] = [];
 	for (const bucket of buckets.values()) {
-		pushUnique(categories, bucket.x);
+		pushUnique(populated, bucket.x);
 		if (hasSeriesLabel(bucket.series)) pushUnique(seriesNames, bucket.series);
 	}
 
@@ -201,7 +222,12 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 		noteMap.set(key, bucket.notes);
 	}
 
-	const categoryTotals = categories.map((category) => {
+	const timeLike = hasTimeCategories(populated);
+	const sort = resolveCategorySort(settings.sort, populated);
+	const cap = Math.max(1, settings.maxCategories);
+	const raceByDate = settings.chartType === 'bar-race' && timeLike;
+
+	const populatedTotals = populated.map((category) => {
 		let total = 0;
 		for (const series of names) {
 			total += valueMap.get(`${series}\0${category}`) ?? 0;
@@ -209,26 +235,35 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 		return { category, total };
 	});
 
-	const dateCount = categories.filter((category) => parseChartDate(category)).length;
-	const raceByDate =
-		settings.chartType === 'bar-race' && dateCount > 0 && dateCount >= categories.length / 2;
+	let keptPopulated = populatedTotals;
+	if (timeLike || raceByDate) {
+		keptPopulated = [...populatedTotals].sort((a, b) => compareTimeLabels(a.category, b.category));
+		const keep = raceByDate ? Math.max(24, cap) : cap;
+		if (keptPopulated.length > keep) keptPopulated = keptPopulated.slice(-keep);
+	} else {
+		keptPopulated = [...populatedTotals].sort((a, b) => compareCategories(a, b, sort));
+		if (keptPopulated.length > cap) keptPopulated = keptPopulated.slice(0, cap);
+	}
 
-	categoryTotals.sort((a, b) => {
-		if (raceByDate) {
-			const left = parseChartDate(a.category) ?? a.category;
-			const right = parseChartDate(b.category) ?? b.category;
-			return left.localeCompare(right);
+	const shouldFill = timeLike && !SKIP_TIME_FILL.has(settings.chartType);
+	const axisCategories = shouldFill
+		? fillTimeCategories(keptPopulated.map((item) => item.category))
+		: keptPopulated.map((item) => item.category);
+
+	const categoryTotals = axisCategories.map((category) => {
+		const known = keptPopulated.find((item) => item.category === category);
+		if (known) return known;
+		let total = 0;
+		for (const series of names) {
+			total += valueMap.get(`${series}\0${category}`) ?? 0;
 		}
-		if (settings.sort === 'label-asc') return a.category.localeCompare(b.category);
-		if (settings.sort === 'label-desc') return b.category.localeCompare(a.category);
-		if (settings.sort === 'value-asc') return a.total - b.total;
-		return b.total - a.total;
+		return { category, total };
 	});
-
-	const limited = raceByDate
-		? categoryTotals.slice(-Math.max(24, settings.maxCategories))
-		: categoryTotals.slice(0, Math.max(1, settings.maxCategories));
-	const orderedCategories = limited.map((item) => item.category);
+	categoryTotals.sort((a, b) => {
+		if (raceByDate) return compareTimeLabels(a.category, b.category);
+		return compareCategories(a, b, sort);
+	});
+	const orderedCategories = categoryTotals.map((item) => item.category);
 	if (raceByDate && names.length > settings.maxCategories) {
 		const lastCategory = orderedCategories[orderedCategories.length - 1];
 		names = [...names]
