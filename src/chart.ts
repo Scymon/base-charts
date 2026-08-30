@@ -207,14 +207,16 @@ export function categoryWindowHint(visible: number, total: number): string | nul
 	return `${visible} of ${total} categories`;
 }
 
-export function treemapLabelLayout(params: { rect?: { width?: number; height?: number } }) {
+export function treemapLabelLayout(params: { rect?: { width?: number; height?: number }; text?: string }) {
 	const width = params.rect?.width ?? 0;
 	const height = params.rect?.height ?? 0;
-	if (width < 36 || height < TREEMAP_LABEL_MIN_SHOW) {
+	const text = String(params.text ?? '').split('\n')[0] ?? '';
+	const needed = Math.max(36, text.length * 6.4 + 10);
+	if (width < needed || height < TREEMAP_LABEL_MIN_SHOW) {
 		return { fontSize: 0, width: 0, height: 0 };
 	}
 	return {
-		fontSize: height >= 36 && width >= 72 ? 12 : 11,
+		fontSize: height >= 36 && width >= 80 ? 12 : 11,
 		width: Math.max(0, width - 8),
 	};
 }
@@ -471,6 +473,14 @@ export function buildChartOption(
 					right: 4,
 					top: 8,
 					bottom: 28,
+					upperLabel: {
+						show: nestedLevels,
+						height: 20,
+						color: theme.text,
+						formatter: '{b}',
+						overflow: 'truncate',
+						ellipsis: '…',
+					},
 					breadcrumb: {
 						show: true,
 						left: 8,
@@ -492,7 +502,7 @@ export function buildChartOption(
 					levels: [
 						{
 							colorMappingBy: 'value',
-							itemStyle: { borderColor: leafBorder, borderWidth: 2, gapWidth: 2 },
+							itemStyle: { borderColor: leafBorder, borderWidth: 1, gapWidth: 1 },
 							upperLabel: {
 								show: nestedLevels,
 								color: theme.text,
@@ -664,11 +674,12 @@ export function buildChartOption(
 	}
 
 	if (settings.chartType === 'streamgraph') {
+		const origin = Date.UTC(2024, 0, 1);
 		const river: [string, number, string][] = data.seriesNames.flatMap((series, seriesIndex) =>
 			data.categories.map(
-				(category, index): [string, number, string] => [
-					category,
-					data.values[seriesIndex]?.[index] ?? 0,
+				(_category, index): [string, number, string] => [
+					new Date(origin + index * 86_400_000).toISOString().slice(0, 10),
+					Math.max(0, data.values[seriesIndex]?.[index] ?? 0),
 					series,
 				],
 			),
@@ -677,16 +688,21 @@ export function buildChartOption(
 			...anim,
 			backgroundColor: theme.background,
 			color: colors,
-			legend,
+			legend: { ...legend, data: data.seriesNames },
 			tooltip: categoryTooltip(theme, data, settings, 'item'),
 			singleAxis: {
-				type: 'category',
-				data: data.categories,
+				type: 'time',
 				top: 48,
 				bottom: categoryAxisPad(data.categories, 'bottom').bottom,
 				left: 24,
 				right: 24,
-				axisLabel: categoryAxisLabel(theme, 'bottom'),
+				axisLabel: {
+					...categoryAxisLabel(theme, 'bottom'),
+					formatter: (value: string | number) => {
+						const index = Math.round((new Date(value).getTime() - origin) / 86_400_000);
+						return data.categories[index] ?? '';
+					},
+				},
 				axisLine: { lineStyle: { color: theme.border } },
 				axisTick: { lineStyle: { color: theme.border } },
 			},
@@ -750,7 +766,7 @@ export function buildChartOption(
 					coordinateSystem: 'cartesian2d',
 					data: cells,
 					encode: { x: 0, y: 1 },
-					renderItem: (_params, api) => {
+					renderItem: (params, api) => {
 						const x = Number(api.value(0));
 						const y = Number(api.value(1));
 						const sized = api.size?.([1, 1]);
@@ -759,6 +775,8 @@ export function buildChartOption(
 						const point = api.coord([x, y]);
 						const width = Math.max(2, Number(size[0] ?? 16) - gap);
 						const height = Math.max(2, Number(size[1] ?? 16) - gap);
+						const cell = cells[params.dataIndex];
+						const fill = cell?.itemStyle.color ?? theme.accent;
 						return {
 							type: 'rect',
 							shape: {
@@ -769,7 +787,7 @@ export function buildChartOption(
 								r: 2,
 							},
 							style: {
-								fill: api.visual('color') as string,
+								fill,
 							},
 						};
 					},

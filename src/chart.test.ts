@@ -336,7 +336,9 @@ describe('buildChartOption', () => {
 		assert.equal(option.animation, true);
 		const tiny = treemapLabelLayout({ rect: { width: 12, height: 10 } });
 		assert.equal(tiny.fontSize, 0);
-		const roomy = treemapLabelLayout({ rect: { width: 120, height: 48 } });
+		const clipped = treemapLabelLayout({ rect: { width: 40, height: 20 }, text: 'travel' });
+		assert.equal(clipped.fontSize, 0);
+		const roomy = treemapLabelLayout({ rect: { width: 120, height: 48 }, text: 'comedy' });
 		assert.ok((roomy.fontSize ?? 0) >= 11);
 		assert.equal(treemapLabelFormatter({ name: 'alpha', value: 10 }, 100), 'alpha');
 		assert.match(treemapLabelFormatter({ name: 'beta', value: 4000 }, 100), /beta/);
