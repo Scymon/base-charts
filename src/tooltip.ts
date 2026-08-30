@@ -1,6 +1,17 @@
 import { notesByName, notesForCategory, notesForSeries, resolveClickNotes } from './click.ts';
 import { formatAxisTick } from './format.ts';
-import type { AggregatedChart, CategoryNote, ChartSettings, ClickPayload } from './types.ts';
+import type { AggregatedChart, CategoryNote, ChartSettings, ClickPayload, ScatterPoint } from './types.ts';
+
+/** Charts whose marks are often one note (or 1:1). Grouped types stay on the bucket card. */
+const POINT_CHART_TYPES = new Set<ChartSettings['chartType']>([
+	'scatter',
+	'line',
+	'line-step',
+	'area',
+	'area-stacked',
+	'bubbles',
+	'funnel',
+]);
 
 export const TOOLTIP_NOTE_PATH_ATTR = 'data-motion-note-path';
 
@@ -120,35 +131,88 @@ function notesForTooltip(data: AggregatedChart, params: unknown): CategoryNote[]
 	return [];
 }
 
-function isSingleDatumMark(
+function xyFromParams(params: unknown): { x?: unknown; y?: number } {
+	const item = firstParam(params);
+	const raw = item?.value ?? item?.data?.value;
+	if (Array.isArray(raw)) {
+		const y = Number(raw[1] ?? raw[0]);
+		return { x: raw[0], y: Number.isFinite(y) ? y : undefined };
+	}
+	if (typeof raw === 'number' && Number.isFinite(raw)) return { y: raw };
+	return {};
+}
+
+function findRawPoint(data: AggregatedChart, params: unknown): ScatterPoint | undefined {
+	const item = firstParam(params);
+	const name = (typeof item?.name === 'string' && item.name) || item?.data?.name || '';
+	const path = typeof item?.data?.path === 'string' ? item.data.path : '';
+	const series = seriesFromParams(params);
+	const { x, y } = xyFromParams(params);
+
+	if (path) {
+		const hit = data.points.find((point) => point.path === path && (!series || point.series === series || !point.series));
+		if (hit) return hit;
+	}
+	if (name) {
+		const named = data.points.filter((point) => point.name === name);
+		if (series) {
+			const hit = named.find((point) => point.series === series);
+			if (hit) return hit;
+		}
+		const raw = named.find((point) => point.path || typeof point.x === 'number');
+		if (raw) return raw;
+		if (named.length === 1) return named[0];
+	}
+	if (typeof x === 'number' && typeof y === 'number') {
+		return data.points.find(
+			(point) => point.x === x && point.y === y && (!series || point.series === series || !point.series),
+		);
+	}
+	return undefined;
+}
+
+function plottedY(params: unknown, point: ScatterPoint | undefined, note: CategoryNote | undefined): number | undefined {
+	const fromParams = xyFromParams(params).y;
+	if (fromParams != null) return fromParams;
+	if (point && Number.isFinite(point.y)) return point.y;
+	if (note && Number.isFinite(note.y)) return note.y;
+	return undefined;
+}
+
+function shouldUseSingleDatumCard(
 	data: AggregatedChart,
 	settings: ChartSettings,
 	params: unknown,
 	category: string,
 	notes: CategoryNote[],
+	point: ScatterPoint | undefined,
 ): boolean {
-	if (notes.length !== 1) return false;
-	if (settings.chartType === 'scatter') {
-		const numeric = data.points.some((point) => typeof point.x === 'number');
-		if (numeric) return true;
-	}
-	return !data.categories.includes(category) && !data.seriesNames.includes(category);
+	const { x, y } = xyFromParams(params);
+	const hasPlottedValue = y != null || typeof x === 'number';
+	const categoryBucket = data.categories.includes(category);
+
+	if (settings.chartType === 'scatter' && (point || hasPlottedValue)) return true;
+	if (POINT_CHART_TYPES.has(settings.chartType) && notes.length === 1) return true;
+	if (notes.length === 0 && !categoryBucket && (point || hasPlottedValue)) return true;
+	return false;
 }
 
 function visibleSeriesName(
 	seriesName: string | undefined,
 	data: AggregatedChart,
 	title: string,
+	opts: { allowLoneSeries?: boolean } = {},
 ): string | undefined {
 	if (!seriesName || DUMMY_SERIES.has(seriesName)) return undefined;
 	if (seriesName === title) return undefined;
 	if (!data.seriesNames.includes(seriesName)) return undefined;
-	if (data.seriesNames.length <= 1) return undefined;
+	if (!opts.allowLoneSeries && data.seriesNames.length <= 1) return undefined;
 	return seriesName;
 }
 
-function wrapTooltip(body: string): string {
-	return `<div class="motion-chart-tooltip">${body}</div>`;
+function wrapTooltip(body: string, path?: string): string {
+	const attr = path ? ` ${TOOLTIP_NOTE_PATH_ATTR}="${escapeHtml(path)}"` : '';
+	return `<div class="motion-chart-tooltip"${attr}>${body}</div>`;
 }
 
 function statLine(text: string): string {
@@ -186,19 +250,30 @@ function formatSingleNoteTooltip(
 	params: unknown,
 	settings: ChartSettings,
 	data: AggregatedChart,
+	point?: ScatterPoint,
 ): string {
-	const item = firstParam(params);
-	const rawValue = item?.value ?? item?.data?.value;
-	const xValue = Array.isArray(rawValue) ? rawValue[0] : undefined;
-	const yValue = note.y;
-	const seriesName = visibleSeriesName(seriesFromParams(params), data, note.name);
+	const category = categoryFromParams(params);
+	const xy = xyFromParams(params);
+	const yValue = plottedY(params, point, note);
+	const xValue = point?.x ?? xy.x ?? (data.categories.includes(category) ? category : undefined);
+	const seriesName = visibleSeriesName(seriesFromParams(params) ?? point?.series, data, note.name, {
+		allowLoneSeries: true,
+	});
 	const parts = [titleLine(displayNoteName(note.name))];
 	if (seriesName) parts.push(statLine(escapeHtml(seriesName)));
 	if (xValue != null && xValue !== '') {
 		parts.push(labeledValue(propertyLabel(settings.xProperty), formatDatum(xValue)));
 	}
-	parts.push(labeledValue(propertyLabel(settings.yProperty), formatAxisTick(yValue)));
-	return wrapTooltip(parts.filter(Boolean).join(''));
+	if (yValue != null) {
+		parts.push(labeledValue(propertyLabel(settings.yProperty), formatAxisTick(yValue)));
+	}
+	if (settings.chartType === 'combo' && data.hasY2) {
+		const catIndex = data.categories.indexOf(category);
+		if (catIndex >= 0) {
+			parts.push(labeledValue(propertyLabel(settings.y2Property), formatAxisTick(data.y2Category[catIndex] ?? 0)));
+		}
+	}
+	return wrapTooltip(parts.filter(Boolean).join(''), note.path);
 }
 
 function formatGroupTooltip(
@@ -242,11 +317,33 @@ export function formatCategoryTooltip(
 	const category = categoryFromParams(params);
 	const seriesName = seriesFromParams(params);
 	const notes = notesForTooltip(data, params);
-	if (isSingleDatumMark(data, settings, params, category, notes) && notes[0]) {
-		return formatSingleNoteTooltip(notes[0], params, settings, data);
+	const point = findRawPoint(data, params);
+	if (shouldUseSingleDatumCard(data, settings, params, category, notes, point)) {
+		const y = plottedY(params, point, notes[0]);
+		const note = point
+			? { name: point.name, path: point.path ?? notes[0]?.path ?? '', y: y ?? point.y }
+			: (notes[0] ?? {
+					name: category,
+					path: firstParam(params)?.data?.path ?? '',
+					y: y ?? 0,
+				});
+		return formatSingleNoteTooltip(note, params, settings, data, point);
 	}
 	const raw = rawAt(data, category, seriesName);
 	const value = aggregatedAt(data, category, seriesName);
+	if (notes.length === 0 && raw.length === 0) {
+		const y = xyFromParams(params).y;
+		if (y != null) {
+			return formatSingleNoteTooltip(
+				{ name: category || point?.name || '', path: firstParam(params)?.data?.path ?? point?.path ?? '', y },
+				params,
+				settings,
+				data,
+				point,
+			);
+		}
+		return wrapTooltip(titleLine(category || seriesName || ''));
+	}
 	return formatGroupTooltip(category, seriesName, notes, raw, value, data, settings, category);
 }
 

@@ -33,7 +33,13 @@ export function notesForSeries(data: AggregatedChart, seriesName: string): Categ
 }
 
 export function notesByName(data: AggregatedChart, name: string): CategoryNote[] {
-	return uniqueNotes(data.notes.flat(2).filter((note) => note.name === name || note.path === name));
+	const fromBuckets = data.notes.flat(2).filter((note) => note.name === name || note.path === name);
+	if (fromBuckets.length > 0) return uniqueNotes(fromBuckets);
+	return uniqueNotes(
+		data.points
+			.filter((point) => point.name === name || point.path === name)
+			.map((point) => ({ name: point.name, path: point.path ?? '', y: point.y })),
+	);
 }
 
 export function pickOpenNote(notes: CategoryNote[]): CategoryNote | null {

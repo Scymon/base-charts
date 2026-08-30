@@ -34,7 +34,7 @@ For development, you can instead clone or symlink this folder into `.obsidian/pl
 3. Change the layout to **Motion Chart**.
 4. Still in that view menu, set chart type, X-axis, Y-axis, and aggregation. You can switch types without leaving the base; the same dataset morphs between layouts.
 
-Charts stagger in (bars, slices, and points cascade), morph when you change type, and animate again when filters or data change. Hover scales the mark slightly. Hover a grouped mark (a bar, box, or stacked segment) to list every note in that bucket — n, the configured aggregation, min–max, and each file with its Y value. Scroll the card when the list is long; click a row to open that note. A single-note mark (scatter point) still shows that file and its X/Y fields. The plugin respects `prefers-reduced-motion` and turns all of that off.
+Charts stagger in (bars, slices, and points cascade), morph when you change type, and animate again when filters or data change. Hover scales the mark slightly. Hover a grouped mark (a bar, box, or stacked segment) to list every note in that bucket — n, the configured aggregation, min–max, and each file with its Y value. Scroll the card when the list is long; click a row to open that note. A single-note mark (scatter, or a 1:1 line/area/bubble/funnel point) shows that file plus labeled X/Y from the fields you picked — not n/median of a bucket. The plugin respects `prefers-reduced-motion` and turns all of that off.
 
 Any base with a **category** (text, list, or date) and a **number** works. Pick those two properties; nothing else is assumed.
 
