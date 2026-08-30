@@ -842,7 +842,14 @@ describe('buildChartOption', () => {
 		const option = buildChartOption(dense, settings({ maxCategories: 80 }), theme, false);
 		const xAxis = firstOf(
 			option.xAxis as {
-				axisLabel?: { interval?: (index: number) => boolean; rotate?: number; hideOverlap?: boolean };
+				axisLabel?: {
+					interval?: (index: number) => boolean;
+					rotate?: number;
+					hideOverlap?: boolean;
+					showMinLabel?: boolean;
+					showMaxLabel?: boolean;
+					overflow?: string;
+				};
 			},
 		);
 		const interval = xAxis?.axisLabel?.interval;
@@ -852,8 +859,23 @@ describe('buildChartOption', () => {
 		const shown = labels.map((_, index) => interval?.(index)).filter(Boolean);
 		assert.ok(shown.length < labels.length);
 		assert.equal(xAxis?.axisLabel?.hideOverlap, false);
+		assert.equal(xAxis?.axisLabel?.showMinLabel, true);
+		assert.equal(xAxis?.axisLabel?.showMaxLabel, true);
+		assert.equal(xAxis?.axisLabel?.overflow, 'none');
 		assert.ok((xAxis?.axisLabel?.rotate ?? 0) > 0);
 		assert.equal(JSON.stringify(option).includes('Score'), false);
+	});
+
+	it('puts line and area categories on the plot edges', () => {
+		const area = buildChartOption(data, settings({ chartType: 'area' }), theme, false);
+		const line = buildChartOption(data, settings({ chartType: 'line' }), theme, false);
+		const bar = buildChartOption(data, settings({ chartType: 'bar' }), theme, false);
+		const areaX = firstOf(area.xAxis as { boundaryGap?: boolean });
+		const lineX = firstOf(line.xAxis as { boundaryGap?: boolean });
+		const barX = firstOf(bar.xAxis as { boundaryGap?: boolean });
+		assert.equal(areaX?.boundaryGap, false);
+		assert.equal(lineX?.boundaryGap, false);
+		assert.notEqual(barX?.boundaryGap, false);
 	});
 
 	it('opens notes on a treemap leaf but not an un-modified parent zoom click', () => {
