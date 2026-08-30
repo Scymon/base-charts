@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { aggregateRows } from './aggregate.ts';
 import {
 	buildChartOption,
+	categoryAxisPad,
 	categoryWindowHint,
 	chartCoordFamily,
 	CHART_OPTION_REPLACE_MERGE,
@@ -18,6 +19,7 @@ import {
 	SLIDER_HANDLE_ICON,
 	SLIDER_HANDLE_SIZE,
 	SLIDER_HEIGHT,
+	SLIDER_RESERVE,
 	SLIDER_START,
 	SLIDER_WAVEFORM_ID,
 	sliderWaveformGradient,
@@ -197,7 +199,7 @@ describe('buildChartOption', () => {
 		}
 		assert.equal(xAxis?.axisLabel?.hideOverlap, false);
 		assert.ok((xAxis?.axisLabel?.rotate ?? 0) > 0);
-		assert.ok((grid?.bottom ?? 0) >= 100);
+		assert.equal(grid?.bottom, SLIDER_RESERVE);
 	});
 
 	it('shows every category label on horizontal bar and heatmap axes', () => {
@@ -620,7 +622,7 @@ describe('buildChartOption', () => {
 			containLabel?: boolean;
 		}[];
 		assert.ok(Array.isArray(grids));
-		assert.ok((grids[0]?.bottom ?? 0) >= 100 + 36);
+		assert.equal(grids[0]?.bottom, SLIDER_RESERVE);
 		assert.equal(grids[0]?.containLabel, true);
 		const waveGrid = grids.find((item) => item.id === SLIDER_WAVEFORM_ID);
 		assert.ok(waveGrid);
@@ -702,6 +704,43 @@ describe('buildChartOption', () => {
 		assert.equal(categoryWindowHint(16, 20), '16 of 20 categories');
 		assert.equal(categoryWindowHint(8, 8), null);
 		assert.equal(categoryWindowHint(33, 33), null);
+	});
+
+	it('keeps cartesian bottom inset to slider clearance, not a stacked label well', () => {
+		assert.equal(SLIDER_RESERVE, SLIDER_EDGE + SLIDER_HEIGHT + 4);
+		assert.ok(SLIDER_RESERVE < 36);
+
+		const dates = Array.from({ length: 20 }, (_, index) => `2026-08-${String(20 - (index % 20)).padStart(2, '0')}`);
+		const dense = aggregateRows(
+			dates.map((label, index) => ({
+				xLabels: [label],
+				seriesLabels: [],
+				y: 1000 + index,
+				xNumeric: null,
+				fileName: `note-${index}`,
+			})),
+			settings({ chartType: 'area-stacked', maxCategories: 40 }),
+		);
+		const withSlider = buildChartOption(
+			dense,
+			settings({ chartType: 'area-stacked', maxCategories: 40 }),
+			theme,
+			false,
+		);
+		const grids = withSlider.grid as { bottom?: number; containLabel?: boolean }[];
+		const pad = categoryAxisPad(dense.categories, 'bottom');
+		assert.ok(pad.bottom >= 100);
+		assert.equal(grids[0]?.containLabel, true);
+		assert.equal(grids[0]?.bottom, SLIDER_RESERVE);
+		assert.ok((grids[0]?.bottom ?? 0) < pad.bottom);
+		assert.ok((grids[0]?.bottom ?? 0) >= SLIDER_EDGE + SLIDER_HEIGHT);
+		assert.ok((grids[0]?.bottom ?? 0) - (SLIDER_EDGE + SLIDER_HEIGHT) <= 8);
+
+		const noSlider = buildChartOption(data, settings({ chartType: 'area-stacked' }), theme, false);
+		const sparseGrid = firstOf(noSlider.grid as { bottom?: number; containLabel?: boolean });
+		assert.equal(noSlider.dataZoom, undefined);
+		assert.equal(sparseGrid?.containLabel, true);
+		assert.equal(sparseGrid?.bottom, 0);
 	});
 
 	it('builds a finished treemap with roam, breadcrumb, and label overflow handling', () => {
@@ -1125,7 +1164,7 @@ describe('buildChartOption', () => {
 		assert.ok(zooms.some((item) => item.type === 'inside'));
 		assert.ok(zooms.some((item) => item.type === 'slider'));
 		const grid = firstOf(option.grid as { bottom?: number });
-		assert.ok((grid?.bottom ?? 0) >= 100);
+		assert.equal(grid?.bottom, SLIDER_RESERVE);
 	});
 
 	it('keeps the 16-category zoom window on dense tag charts', () => {
