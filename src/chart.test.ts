@@ -7,13 +7,18 @@ import { aggregateRows } from './aggregate.ts';
 import {
 	buildChartOption,
 	categoryWindowHint,
+	chartCoordFamily,
+	CHART_OPTION_REPLACE_MERGE,
 	hasDateCategories,
 	icicleLabelVisible,
 	logSafeValue,
 	marimekkoWidths,
+	shouldApplyLogY,
+	shouldResetChart,
 	sturgesBinCount,
 	treemapLabelFormatter,
 	treemapLabelLayout,
+	usesCartesianGrid,
 } from './chart.ts';
 import { pickOpenNote, resolveClickNotes, shouldOpenNotesOnClick } from './click.ts';
 import { CHART_TYPES, DEFAULT_EXCLUDED_TAGS, type ChartSettings, type ChartTheme, type RawRow } from './types.ts';
@@ -196,7 +201,9 @@ describe('buildChartOption', () => {
 			settings({ logY: true }),
 		);
 		assert.equal(logSafeValue(0, true), null);
+		assert.equal(logSafeValue(-4, true), null);
 		assert.equal(logSafeValue(10000, true), 10000);
+		assert.equal(shouldApplyLogY(settings({ logY: true }), withZero), true);
 		const option = buildChartOption(withZero, settings({ logY: true }), theme, false);
 		const yAxis = option.yAxis as { type?: string };
 		assert.equal(yAxis.type, 'log');
@@ -204,6 +211,36 @@ describe('buildChartOption', () => {
 		const zeroPoint = seriesData.find((item) => item.name === 'alpha');
 		assert.equal(zeroPoint?.value, null);
 		assert.equal(zeroPoint?.raw, 0);
+		const highPoint = seriesData.find((item) => item.name === 'beta');
+		assert.equal(highPoint?.value, 10000);
+	});
+
+	it('does not apply log Y when every value is non-positive, so bars still have heights', () => {
+		const allNonPositive = aggregateRows(
+			[
+				{ xLabels: ['alpha'], seriesLabels: [], y: 0, xNumeric: null, fileName: 'zero' },
+				{ xLabels: ['beta'], seriesLabels: [], y: -3, xNumeric: null, fileName: 'neg' },
+			],
+			settings({ logY: true }),
+		);
+		assert.equal(shouldApplyLogY(settings({ logY: true }), allNonPositive), false);
+		const option = buildChartOption(allNonPositive, settings({ logY: true }), theme, false);
+		const yAxis = option.yAxis as { type?: string };
+		assert.equal(yAxis.type, 'value');
+		const seriesData = (option.series as { data: { value: number | null }[] }[])[0]?.data ?? [];
+		assert.ok(seriesData.length > 0);
+		assert.ok(seriesData.every((item) => item.value != null));
+	});
+
+	it('always includes grid on cartesian bar-family charts', () => {
+		const types = ['bar', 'bar-horizontal', 'bar-stacked', 'bar-percent', 'combo', 'lollipop'] as const;
+		for (const chartType of types) {
+			assert.equal(usesCartesianGrid(chartType), true, chartType);
+			const option = buildChartOption(data, settings({ chartType }), theme, false);
+			assert.ok(option.grid, `${chartType} should include grid`);
+			assert.equal(typeof option.grid, 'object');
+		}
+		assert.ok(CHART_OPTION_REPLACE_MERGE.includes('grid'));
 	});
 
 	it('builds combo with a Y2 line and a second axis', () => {
@@ -628,6 +665,29 @@ describe('buildChartOption', () => {
 		const still = buildChartOption(dated, settings({ chartType: 'bar-race' }), theme, true);
 		assert.equal(still.animation, false);
 		assert.equal((still.timeline as { autoPlay?: boolean }).autoPlay, false);
+	});
+
+	it('resets the echarts instance when the coordinate family changes', () => {
+		assert.equal(shouldResetChart(null, 'bar'), false);
+		assert.equal(shouldResetChart('bar', 'bar'), false);
+		assert.equal(shouldResetChart('bar', 'bar-horizontal'), false);
+		assert.equal(shouldResetChart('bar', 'bar-stacked'), false);
+		assert.equal(shouldResetChart('bar', 'bar-percent'), false);
+		assert.equal(shouldResetChart('bar', 'combo'), false);
+		assert.equal(shouldResetChart('bar', 'lollipop'), false);
+		assert.equal(shouldResetChart('bar', 'line'), false);
+		assert.equal(shouldResetChart('pie', 'doughnut'), false);
+		assert.equal(shouldResetChart('pie', 'bar'), true);
+		assert.equal(shouldResetChart('rose', 'bar-horizontal'), true);
+		assert.equal(shouldResetChart('sankey', 'bar'), true);
+		assert.equal(shouldResetChart('treemap', 'bar-stacked'), true);
+		assert.equal(shouldResetChart('calendar', 'combo'), true);
+		assert.equal(shouldResetChart('bar-polar', 'bar'), true);
+		assert.equal(shouldResetChart('streamgraph', 'lollipop'), true);
+		assert.equal(shouldResetChart('radar', 'bar'), true);
+		assert.equal(chartCoordFamily('waffle'), 'cartesian');
+		assert.equal(chartCoordFamily('icicle'), 'cartesian');
+		assert.equal(shouldResetChart('waffle', 'bar'), false);
 	});
 
 	it('still disables animation on leftover types when reduced motion is on', () => {

@@ -43,7 +43,13 @@ import {
 import { LabelLayout, UniversalTransition } from 'echarts/features';
 import { CanvasRenderer } from 'echarts/renderers';
 import { aggregateRows } from './aggregate.ts';
-import { buildChartOption, categoryWindowHint, ZOOM_AFTER } from './chart.ts';
+import {
+	buildChartOption,
+	categoryWindowHint,
+	CHART_OPTION_REPLACE_MERGE,
+	shouldResetChart,
+	ZOOM_AFTER,
+} from './chart.ts';
 import { pickOpenNote, resolveClickNotes, shouldOpenNotesOnClick } from './click.ts';
 import { prefersReducedMotion, readChartTheme } from './theme.ts';
 import {
@@ -127,7 +133,7 @@ export class MotionChartView extends BasesView {
 	onload(): void {
 		this.ensureChart();
 		this.resizeObserver = new ResizeObserver(() => {
-			this.chart?.resize({ width: 'auto', height: 'auto' });
+			if (this.chart) this.syncChartSize(this.chart);
 		});
 		this.resizeObserver.observe(this.rootEl);
 		this.resizeObserver.observe(this.chartEl);
@@ -159,6 +165,7 @@ export class MotionChartView extends BasesView {
 
 	private render(): void {
 		const settings = this.readSettings();
+		const resetChart = shouldResetChart(this.lastChartType, settings.chartType);
 		if (this.lastChartType !== settings.chartType) {
 			this.drillName = null;
 			this.lastChartType = settings.chartType;
@@ -191,32 +198,32 @@ export class MotionChartView extends BasesView {
 
 		this.emptyEl.hide();
 		this.chartEl.show();
-		const theme = readChartTheme(this.rootEl);
-		const option = buildChartOption(aggregated, settings, theme, prefersReducedMotion(), {
-			drillName: this.drillName,
-		});
-		this.ensureChart().setOption(option, {
-			replaceMerge: [
-				'series',
-				'xAxis',
-				'yAxis',
-				'radar',
-				'calendar',
-				'visualMap',
-				'dataZoom',
-				'polar',
-				'angleAxis',
-				'radiusAxis',
-				'singleAxis',
-				'timeline',
-				'parallel',
-				'parallelAxis',
-				'title',
-				'options',
-			],
-		});
-		this.chart?.resize({ width: 'auto', height: 'auto' });
+		try {
+			const theme = readChartTheme(this.rootEl);
+			const option = buildChartOption(aggregated, settings, theme, prefersReducedMotion(), {
+				drillName: this.drillName,
+			});
+			const chart = this.ensureChart();
+			this.syncChartSize(chart);
+			if (resetChart) chart.clear();
+			chart.setOption(option, {
+				replaceMerge: [...CHART_OPTION_REPLACE_MERGE],
+			});
+			this.syncChartSize(chart);
+		} catch {
+			this.showEmpty('Could not draw this chart. Check the axis settings, or try another chart type.');
+			return;
+		}
 		this.updateHint(aggregated);
+	}
+
+	/** Skip 0×0 resizes while the canvas is display:none so a later show() is not stuck blank. */
+	private syncChartSize(chart: echarts.ECharts): void {
+		const width = this.chartEl.clientWidth;
+		const height = this.chartEl.clientHeight;
+		if (width > 0 && height > 0) {
+			chart.resize({ width, height });
+		}
 	}
 
 	private updateHint(data: AggregatedChart): void {
@@ -303,6 +310,7 @@ export class MotionChartView extends BasesView {
 	}
 
 	private showEmpty(message: string): void {
+		this.chart?.clear();
 		this.chartEl.hide();
 		this.notesEl.hide();
 		this.hintEl.hide();
