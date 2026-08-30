@@ -120,7 +120,12 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 		}
 
 		const xLabels = row.xLabels.length > 0 ? row.xLabels : ['(empty)'];
-		const seriesLabels = row.seriesLabels.length > 0 ? row.seriesLabels : [''];
+		const seriesLabels =
+			row.seriesLabels.length > 0
+				? row.seriesLabels
+				: settings.chartType === 'bar-race'
+					? [row.fileName]
+					: [''];
 		const y = row.y ?? 0;
 
 		if (row.xNumeric != null && row.y != null) {
@@ -167,7 +172,7 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 		pushUnique(seriesNames, bucket.series || 'Value');
 	}
 
-	const names = seriesNames.length > 0 ? seriesNames : ['Value'];
+	let names = seriesNames.length > 0 ? seriesNames : ['Value'];
 	const valueMap = new Map<string, number>();
 	const rawMap = new Map<string, number[]>();
 	const y2Map = new Map<string, number>();
@@ -195,15 +200,36 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 		return { category, total };
 	});
 
+	const dateCount = categories.filter((category) => parseChartDate(category)).length;
+	const raceByDate =
+		settings.chartType === 'bar-race' && dateCount > 0 && dateCount >= categories.length / 2;
+
 	categoryTotals.sort((a, b) => {
+		if (raceByDate) {
+			const left = parseChartDate(a.category) ?? a.category;
+			const right = parseChartDate(b.category) ?? b.category;
+			return left.localeCompare(right);
+		}
 		if (settings.sort === 'label-asc') return a.category.localeCompare(b.category);
 		if (settings.sort === 'label-desc') return b.category.localeCompare(a.category);
 		if (settings.sort === 'value-asc') return a.total - b.total;
 		return b.total - a.total;
 	});
 
-	const limited = categoryTotals.slice(0, Math.max(1, settings.maxCategories));
+	const limited = raceByDate
+		? categoryTotals.slice(-Math.max(24, settings.maxCategories))
+		: categoryTotals.slice(0, Math.max(1, settings.maxCategories));
 	const orderedCategories = limited.map((item) => item.category);
+	if (raceByDate && names.length > settings.maxCategories) {
+		const lastCategory = orderedCategories[orderedCategories.length - 1];
+		names = [...names]
+			.sort((left, right) => {
+				const lastLeft = lastCategory ? (valueMap.get(`${left}\0${lastCategory}`) ?? 0) : 0;
+				const lastRight = lastCategory ? (valueMap.get(`${right}\0${lastCategory}`) ?? 0) : 0;
+				return lastRight - lastLeft;
+			})
+			.slice(0, Math.max(1, settings.maxCategories));
+	}
 	const values = names.map((series) =>
 		orderedCategories.map((category) => valueMap.get(`${series}\0${category}`) ?? 0),
 	);

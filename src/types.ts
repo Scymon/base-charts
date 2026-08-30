@@ -32,6 +32,16 @@ export const CHART_TYPES = [
 	'bar-polar',
 	'streamgraph',
 	'waffle',
+	'icicle',
+	'tree',
+	'parallel',
+	'network',
+	'marimekko',
+	'bullet',
+	'slope',
+	'histogram',
+	'violin',
+	'bar-race',
 ] as const;
 
 export type ChartType = (typeof CHART_TYPES)[number];

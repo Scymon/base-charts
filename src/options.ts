@@ -34,12 +34,22 @@ const CHART_TYPE_LABELS: Record<ChartType, string> = {
 	'bar-polar': 'Polar bar',
 	streamgraph: 'Streamgraph',
 	waffle: 'Waffle',
+	icicle: 'Icicle',
+	tree: 'Tree',
+	parallel: 'Parallel coordinates',
+	network: 'Network',
+	marimekko: 'Marimekko',
+	bullet: 'Bullet',
+	slope: 'Slope',
+	histogram: 'Histogram',
+	violin: 'Violin',
+	'bar-race': 'Bar race',
 };
 
 export function viewOptions(config: BasesViewConfig): BasesAllOptions[] {
 	const chartType = String(config.get('chartType') ?? 'bar') as ChartType;
 	const cartesian = usesCartesianGrid(chartType);
-	const combo = chartType === 'combo';
+	const showY2 = chartType === 'combo' || chartType === 'bullet';
 	const logY = supportsLogY(chartType);
 
 	return [
@@ -67,7 +77,7 @@ export function viewOptions(config: BasesViewConfig): BasesAllOptions[] {
 			key: 'y2Axis',
 			displayName: 'Y2-axis',
 			placeholder: 'Second numeric property',
-			shouldHide: () => !combo,
+			shouldHide: () => !showY2,
 		},
 		{
 			type: 'dropdown',
