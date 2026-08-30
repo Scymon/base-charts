@@ -3,16 +3,24 @@ export const VIEW_TYPE = 'motion-chart';
 export const CHART_TYPES = [
 	'bar',
 	'bar-horizontal',
+	'bar-stacked',
 	'line',
 	'area',
 	'pie',
 	'doughnut',
+	'rose',
 	'scatter',
 	'heatmap',
+	'calendar',
+	'boxplot',
+	'bubbles',
 	'radar',
 	'gauge',
 	'treemap',
+	'sunburst',
 	'funnel',
+	'waterfall',
+	'sankey',
 ] as const;
 
 export type ChartType = (typeof CHART_TYPES)[number];
@@ -61,12 +69,21 @@ export interface ScatterPoint {
 	name: string;
 }
 
+export type BoxFive = [number, number, number, number, number];
+
+export interface CalendarCell {
+	date: string;
+	value: number;
+}
+
 export interface AggregatedChart {
 	categories: string[];
 	seriesNames: string[];
 	values: number[][];
+	rawValues: number[][][];
 	points: ScatterPoint[];
 	overall: number | null;
+	calendar: CalendarCell[];
 }
 
 export interface ChartTheme {

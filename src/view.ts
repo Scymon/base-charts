@@ -7,23 +7,28 @@ import {
 import * as echarts from 'echarts/core';
 import {
 	BarChart,
+	BoxplotChart,
 	FunnelChart,
 	GaugeChart,
+	GraphChart,
 	HeatmapChart,
 	LineChart,
 	PieChart,
 	RadarChart,
+	SankeyChart,
 	ScatterChart,
+	SunburstChart,
 	TreemapChart,
 } from 'echarts/charts';
 import {
+	CalendarComponent,
 	GridComponent,
 	LegendComponent,
 	RadarComponent,
 	TooltipComponent,
 	VisualMapComponent,
 } from 'echarts/components';
-import { LabelLayout } from 'echarts/features';
+import { LabelLayout, UniversalTransition } from 'echarts/features';
 import { CanvasRenderer } from 'echarts/renderers';
 import { aggregateRows } from './aggregate.ts';
 import { buildChartOption } from './chart.ts';
@@ -50,12 +55,18 @@ echarts.use([
 	GaugeChart,
 	TreemapChart,
 	FunnelChart,
+	BoxplotChart,
+	GraphChart,
+	SunburstChart,
+	SankeyChart,
 	GridComponent,
 	TooltipComponent,
 	LegendComponent,
 	VisualMapComponent,
 	RadarComponent,
+	CalendarComponent,
 	LabelLayout,
+	UniversalTransition,
 	CanvasRenderer,
 ]);
 
@@ -124,6 +135,10 @@ export class MotionChartView extends BasesView {
 			this.showEmpty('Pick an X-axis property such as Source, topic, or tags.');
 			return;
 		}
+		if (settings.chartType === 'calendar' && aggregated.calendar.length === 0) {
+			this.showEmpty('Calendar heatmap needs a date X-axis such as Release, Due, or file.ctime.');
+			return;
+		}
 		if (!hasValues) {
 			this.showEmpty('No data to chart. Filter Score not empty, or turn off “Filter empty Y values”.');
 			return;
@@ -133,7 +148,9 @@ export class MotionChartView extends BasesView {
 		this.chartEl.show();
 		const theme = readChartTheme(this.rootEl);
 		const option = buildChartOption(aggregated, settings, theme, prefersReducedMotion());
-		this.ensureChart().setOption(option, { notMerge: true });
+		this.ensureChart().setOption(option, {
+			replaceMerge: ['series', 'xAxis', 'yAxis', 'radar', 'calendar', 'visualMap'],
+		});
 		this.chart?.resize();
 	}
 

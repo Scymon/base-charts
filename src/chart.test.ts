@@ -55,8 +55,56 @@ describe('buildChartOption', () => {
 
 	it('disables motion when the user prefers reduced motion', () => {
 		const option = buildChartOption(data, settings(), theme, true);
+		const series = (option.series as { universalTransition?: unknown; animationDelay?: unknown }[])[0];
 		assert.equal(option.animation, false);
 		assert.equal(option.animationDuration, 0);
+		assert.equal(option.animationDelay, 0);
+		assert.equal(series?.universalTransition, false);
+	});
+
+	it('staggers enter and enables universal transition when motion is allowed', () => {
+		const option = buildChartOption(data, settings(), theme, false);
+		const series = (option.series as { universalTransition?: { enabled?: boolean }; animationDelay?: (idx: number) => number }[])[0];
+		assert.equal(option.animation, true);
+		assert.ok((option.animationDuration as number) >= 900);
+		assert.equal(typeof series?.animationDelay, 'function');
+		assert.equal(series?.animationDelay?.(2), 80);
+		assert.equal(series?.universalTransition?.enabled, true);
+	});
+
+	it('builds a boxplot from raw per-note Y values, not a median of medians', () => {
+		const raw = aggregateRows(
+			[
+				{ xLabels: ['cooking'], seriesLabels: [], y: 100, xNumeric: null, fileName: 'low' },
+				{ xLabels: ['cooking'], seriesLabels: [], y: 200, xNumeric: null, fileName: 'mid' },
+				{ xLabels: ['cooking'], seriesLabels: [], y: 300, xNumeric: null, fileName: 'high' },
+				{ xLabels: ['cooking'], seriesLabels: [], y: 4000, xNumeric: null, fileName: 'viral' },
+			],
+			settings({ chartType: 'boxplot', aggregation: 'median' }),
+		);
+		const option = buildChartOption(raw, settings({ chartType: 'boxplot' }), theme, false);
+		const series = (option.series as { type: string; data: { value: number[] }[] }[])[0];
+		assert.equal(series?.type, 'boxplot');
+		const five = series?.data[0]?.value ?? [];
+		assert.equal(five[0], 100);
+		assert.equal(five[2], 250);
+		assert.equal(five[4], 4000);
+		assert.notEqual(five[4], 250);
+	});
+
+	it('builds stacked bar and nightingale options', () => {
+		const stacked = buildChartOption(data, settings({ chartType: 'bar-stacked' }), theme, false);
+		const rose = buildChartOption(data, settings({ chartType: 'rose' }), theme, false);
+		assert.equal((stacked.series as { stack?: string }[])[0]?.stack, 'total');
+		assert.equal((rose.series as { roseType?: string }[])[0]?.roseType, 'area');
+	});
+
+	it('shows every rotated X label on cartesian charts', () => {
+		const option = buildChartOption(data, settings(), theme, false);
+		const xAxis = option.xAxis as { axisLabel?: { interval?: number; hideOverlap?: boolean; rotate?: number } };
+		assert.equal(xAxis.axisLabel?.interval, 0);
+		assert.equal(xAxis.axisLabel?.hideOverlap, false);
+		assert.ok((xAxis.axisLabel?.rotate ?? 0) > 0);
 	});
 
 	it('uses theme text colors instead of hardcoded light-theme ink', () => {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { aggregateNumbers, aggregateRows, median } from './aggregate.ts';
+import { aggregateNumbers, aggregateRows, boxFive, median } from './aggregate.ts';
 import { DEFAULT_EXCLUDED_TAGS, type ChartSettings, type RawRow } from './types.ts';
 
 const settings = (overrides: Partial<ChartSettings> = {}): ChartSettings => ({
@@ -95,5 +95,12 @@ describe('aggregateRows', () => {
 		assert.equal(result.values[clips]?.[0], 20);
 		assert.equal(result.values[main]?.[0], 10);
 		assert.equal(result.values[clips]?.[1], 30);
+	});
+
+	it('keeps raw Y values per category for boxplot', () => {
+		const result = aggregateRows(shorts, settings({ chartType: 'boxplot' }));
+		const youtube = result.categories.indexOf('YouTube');
+		assert.deepEqual([...(result.rawValues[0]?.[youtube] ?? [])].sort((a, b) => a - b), [800, 1200]);
+		assert.deepEqual(boxFive([800, 1200, 4000]), [800, 1000, 1200, 2600, 4000]);
 	});
 });
