@@ -21,12 +21,28 @@ function axisCommon(theme: ChartTheme, showGrid: boolean) {
 	return {
 		axisLine: { lineStyle: { color: theme.border } },
 		axisTick: { lineStyle: { color: theme.border } },
-		axisLabel: { color: theme.muted, hideOverlap: true },
+		axisLabel: { color: theme.muted },
 		splitLine: {
 			show: showGrid,
 			lineStyle: { color: theme.border, opacity: 0.55 },
 		},
 	};
+}
+
+/** Show every category name. interval:'auto' / hideOverlap skips labels on dense Source charts. */
+function categoryAxisLabel(theme: ChartTheme, placement: 'bottom' | 'left') {
+	return {
+		color: theme.muted,
+		interval: 0,
+		hideOverlap: false,
+		rotate: placement === 'bottom' ? 45 : 0,
+	};
+}
+
+function cartesianGrid(horizontal: boolean) {
+	return horizontal
+		? { top: 40, right: 24, bottom: 32, left: 28, containLabel: true }
+		: { top: 40, right: 24, bottom: 120, left: 16, containLabel: true };
 }
 
 function labelStyle(theme: ChartTheme, show: boolean) {
@@ -200,16 +216,18 @@ export function buildChartOption(
 			backgroundColor: theme.background,
 			color: colors,
 			tooltip: { ...tooltipBase(theme), trigger: 'item' },
-			grid: { top: 40, right: 24, bottom: 48, left: 72, containLabel: true },
+			grid: { top: 40, right: 24, bottom: 120, left: 72, containLabel: true },
 			xAxis: {
 				type: 'category',
 				data: data.categories,
 				...axisCommon(theme, false),
+				axisLabel: categoryAxisLabel(theme, 'bottom'),
 			},
 			yAxis: {
 				type: 'category',
 				data: data.seriesNames,
 				...axisCommon(theme, false),
+				axisLabel: categoryAxisLabel(theme, 'left'),
 			},
 			visualMap: {
 				min: 0,
@@ -238,11 +256,14 @@ export function buildChartOption(
 			color: colors,
 			legend,
 			tooltip: { ...tooltipBase(theme), trigger: 'item' },
-			grid: { top: 40, right: 16, bottom: 32, left: 16, containLabel: true },
+			grid: cartesianGrid(false),
 			xAxis: {
 				type: typeof data.points[0]?.x === 'number' ? 'value' : 'category',
 				data: typeof data.points[0]?.x === 'number' ? undefined : data.categories,
 				...axisCommon(theme, settings.showGrid),
+				...(typeof data.points[0]?.x === 'number'
+					? {}
+					: { axisLabel: categoryAxisLabel(theme, 'bottom') }),
 			},
 			yAxis: {
 				type: 'value',
@@ -266,6 +287,7 @@ export function buildChartOption(
 		type: 'category' as const,
 		data: data.categories,
 		...axisCommon(theme, settings.showGrid && !horizontal),
+		axisLabel: categoryAxisLabel(theme, horizontal ? 'left' : 'bottom'),
 	};
 	const valueAxis = {
 		type: 'value' as const,
@@ -304,7 +326,7 @@ export function buildChartOption(
 		color: colors,
 		legend,
 		tooltip: tooltipBase(theme),
-		grid: { top: 40, right: 16, bottom: 32, left: 16, containLabel: true },
+		grid: cartesianGrid(horizontal),
 		xAxis: horizontal ? valueAxis : categoryAxis,
 		yAxis: horizontal ? categoryAxis : valueAxis,
 		series,
