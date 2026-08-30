@@ -61,6 +61,8 @@ import {
 import {
 	dataZoomRangeForIndices,
 	ellipsisAxisOffset,
+	ellipsisNeighborMidpoint,
+	gapNeighborShownIndices,
 	planCategoryAxisTicks,
 	resolveEllipsisRange,
 	visibleIndexRange,
@@ -453,7 +455,7 @@ export class MotionChartView extends BasesView {
 				if (axis.placement === 'bottom') xInterval = interval;
 				else yInterval = interval;
 				for (const gap of plan.gaps) {
-					const pos = ellipsisPixel(chart, gap.index, axis.placement, zoom.startIndex, zoom.endIndex);
+					const pos = ellipsisPixel(chart, gap, axis.placement, zoom.startIndex, zoom.endIndex);
 					if (!pos) continue;
 					graphics.push(this.ellipsisGraphic(gap, pos, theme, axis.labels, axis.property, axis.labels.length));
 				}
@@ -739,26 +741,33 @@ function mainGridRect(
 
 function ellipsisPixel(
 	chart: echarts.ECharts,
-	index: number,
+	gap: { start: number; end: number; index: number },
 	placement: 'bottom' | 'left',
 	startIndex: number,
 	endIndex: number,
 ): { x: number; y: number } | null {
 	const rect = mainGridRect(chart);
 	if (!rect) return null;
+	const neighbors = gapNeighborShownIndices(gap);
 	try {
 		if (placement === 'left') {
-			const y = pixelNumber(chart.convertToPixel({ yAxisIndex: 0 }, index) as number | number[], 1);
-			if (Number.isFinite(y)) return { x: rect.x - 14, y };
+			const a = pixelNumber(chart.convertToPixel({ yAxisIndex: 0 }, neighbors.left) as number | number[], 1);
+			const b = pixelNumber(chart.convertToPixel({ yAxisIndex: 0 }, neighbors.right) as number | number[], 1);
+			if (Number.isFinite(a) && Number.isFinite(b)) {
+				return { x: rect.x - 14, y: ellipsisNeighborMidpoint(a, b) };
+			}
 		} else {
-			const x = pixelNumber(chart.convertToPixel({ xAxisIndex: 0 }, index) as number | number[], 0);
-			if (Number.isFinite(x)) return { x, y: rect.y + rect.height + 16 };
+			const a = pixelNumber(chart.convertToPixel({ xAxisIndex: 0 }, neighbors.left) as number | number[], 0);
+			const b = pixelNumber(chart.convertToPixel({ xAxisIndex: 0 }, neighbors.right) as number | number[], 0);
+			if (Number.isFinite(a) && Number.isFinite(b)) {
+				return { x: ellipsisNeighborMidpoint(a, b), y: rect.y + rect.height + 16 };
+			}
 		}
 	} catch {
 		/* fall through to grid interpolation so the first gap is never dropped */
 	}
 	const offset = ellipsisAxisOffset(
-		index,
+		gap.index,
 		startIndex,
 		endIndex,
 		placement === 'left' ? rect.height : rect.width,

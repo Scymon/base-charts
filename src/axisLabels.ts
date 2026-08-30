@@ -204,6 +204,19 @@ export function resolveEllipsisRange(payload: unknown): { start: number; end: nu
 	return { start, end };
 }
 
+/** Shown-label indices that bound a gap (`gap.start - 1` and `gap.end + 1`). */
+export function gapNeighborShownIndices(gap: Pick<AxisLabelGap, 'start' | 'end'>): {
+	left: number;
+	right: number;
+} {
+	return { left: gap.start - 1, right: gap.end + 1 };
+}
+
+/** Pixel of a `...` mark: midpoint of the two neighboring shown-label pixels. */
+export function ellipsisNeighborMidpoint(leftPixel: number, rightPixel: number): number {
+	return (leftPixel + rightPixel) / 2;
+}
+
 /** Grid-pixel offset for a gap’s `...` when `convertToPixel` misses. */
 export function ellipsisAxisOffset(
 	index: number,

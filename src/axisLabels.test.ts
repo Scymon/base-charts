@@ -6,6 +6,8 @@ import {
 	dataZoomRangeForIndices,
 	ellipsisAxisOffset,
 	ellipsisClickPayload,
+	ellipsisNeighborMidpoint,
+	gapNeighborShownIndices,
 	planCategoryAxisTicks,
 	resolveEllipsisRange,
 	skippedLabels,
@@ -162,5 +164,33 @@ describe('ellipsisAxisOffset', () => {
 	it('interpolates a first-gap index along the grid', () => {
 		const offset = ellipsisAxisOffset(4, 0, 79, 400);
 		assert.ok(offset > 10 && offset < 50);
+	});
+});
+
+describe('ellipsisNeighborMidpoint', () => {
+	it('places the mark at the average of the two neighbor pixels', () => {
+		assert.equal(ellipsisNeighborMidpoint(100, 220), 160);
+		assert.equal(ellipsisNeighborMidpoint(40, 80), 60);
+	});
+
+	it('uses shown[0] and shown[1] as the first gap’s neighbors', () => {
+		const labels = weekLabels(80);
+		const plan = planCategoryAxisTicks(labels, 400, { placement: 'bottom', rotate: 45 });
+		const first = plan.gaps[0];
+		assert.ok(first);
+		assert.deepEqual(gapNeighborShownIndices(first), {
+			left: plan.shown[0],
+			right: plan.shown[1],
+		});
+		for (const gap of plan.gaps) {
+			const neighbors = gapNeighborShownIndices(gap);
+			assert.equal(neighbors.left, gap.start - 1);
+			assert.equal(neighbors.right, gap.end + 1);
+			assert.ok(plan.shown.includes(neighbors.left));
+			assert.ok(plan.shown.includes(neighbors.right));
+			const mark = ellipsisNeighborMidpoint(neighbors.left * 10, neighbors.right * 10);
+			assert.equal(mark, (neighbors.left * 10 + neighbors.right * 10) / 2);
+			assert.ok(mark > neighbors.left * 10 && mark < neighbors.right * 10);
+		}
 	});
 });
