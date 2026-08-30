@@ -36,44 +36,57 @@ For development, you can instead clone or symlink this folder into `.obsidian/pl
 
 Charts stagger in (bars, slices, and points cascade), morph when you change type, and animate again when filters or data change. Hover scales the mark slightly. The plugin respects `prefers-reduced-motion` and turns all of that off.
 
-## Shorts performance recipe
+Any base with a **category** (text, list, or date) and a **number** works. Pick those two properties; nothing else is assumed.
 
-For a vault of YouTube Shorts notes (`Shorts.base`) with properties such as Score, Likes, Comments, tags, Source, and Channel:
+## Recipes
 
-1. On the Motion Chart view, filter **Score is not empty** (use the Bases view filter, not a markdown query).
-2. Set **X-axis** to `Source` or `topic`.
-3. Set **Y-axis** to `Score`.
-4. Set **Aggregation** to **Median** or **Average**. Do not use Sum for Score — a few viral shorts will dominate the chart.
-5. Set **Chart type** to **Bar**. For a hunt-range view of how a tag actually performs, switch to **Boxplot** (X = tags, Y = Score). The box is min / 25th / median / 75th / max of each note’s Score in that tag — not a median of already-aggregated medians.
+### Generic
 
-Optional:
+1. Filter empty Y values (Bases view filter, or the built-in toggle).
+2. Set **X-axis** to a category, list, or date.
+3. Set **Y-axis** to a numeric property.
+4. Set **Aggregation** to **Median** or **Average** when a few large numbers would dominate a sum.
+5. Set **Chart type** to **Bar**. Switch to **Lollipop** when the category list is long, **Boxplot** or **Dumbbell** for the raw spread in each category, **Combo** for a second metric on Y2, or **Log Y** when the range is wide.
 
-- **Series by** `Channel` to split each source into channels, or use **Stacked bar** to pile channels in one column.
-- Use **X-axis** `tags` to see which topics actually pull views. Junk tags are excluded by default (`viral`, `viral-video`, `the-quartering`, `jeremy-hambly`, `quartering-live`). Edit **Exclude tags** in view settings.
-- Formula columns such as `like-rate` and `comment-rate` work as the Y-axis when they evaluate to numbers or percents.
+Click a bar, slice, box, combo bar, or sankey node to open a note from that category. One match opens immediately; several open the highest-Y note and list the other titles.
+
+### Optional: Shorts.base
+
+One optional setup if the base happens to have Score, tags, Channel, and a like-rate formula — useful, not required:
+
+1. Filter **Score is not empty**.
+2. **X-axis** `tags` (or `Source` / `topic`), **Y-axis** `Score`, aggregation **Median**.
+3. **Boxplot** (X = tags, Y = Score) for the raw spread, not a median of medians.
+4. **Combo**: X = tags, Y = Score, **Y2** = like-rate. Turn **Log Y** on if the Score spread is wild.
+5. **Lollipop** for a long tag list. **Series by** `Channel` when you want a split.
+6. Click a bar to open an example note from that tag.
+
+Junk list labels (`viral`, `viral-video`, and similar) stay excluded by default; edit **Exclude tags** if you want them.
 
 ## View settings
 
 | Setting | Notes |
 | --- | --- |
-| Chart type | Bar, horizontal bar, **stacked bar**, line, area, pie, doughnut, **nightingale**, scatter, heatmap, **calendar heatmap**, **boxplot**, **packed bubbles**, radar, gauge, treemap, **sunburst**, funnel, **waterfall**, **sankey** |
-| X-axis | Any note, file, or formula property (category or time). Calendar heatmap needs a date such as Release, Due, or `file.ctime` |
-| Y-axis | A numeric property. Defaults to `Score` when that property exists |
-| Aggregation | Count, sum, average, **median**. Default is median, not sum. Boxplot ignores this and uses the raw Y values in each category |
-| Series by | Optional split, for example `Channel` |
+| Chart type | Bar, horizontal bar, stacked bar, **combo**, **lollipop**, line, area, pie, doughnut, nightingale, scatter, heatmap, calendar heatmap, boxplot, **dumbbell**, **ridgeline**, packed bubbles, radar, gauge, treemap, sunburst, funnel, waterfall, sankey, **chord** |
+| X-axis | Any note, file, or formula property (category or time). Calendar heatmap needs a date property or `file.ctime` |
+| Y-axis | A numeric property. If a property named `Score` exists on the current base, it is preselected |
+| Y2-axis | Combo only. Any second numeric property. Rendered as a line on a second axis; omitted when empty |
+| Aggregation | Count, sum, average, **median**. Default is median, not sum. Boxplot and dumbbell use the raw Y values in each category |
+| Series by | Optional split |
 | Filter empty Y values | On by default |
 | Sort | By value or label |
-| Max categories | Caps busy tag charts |
+| Max categories | Caps busy category charts. Dense cartesian charts also get an inside + slider zoom |
 | Exclude tags | Applied when the X-axis or series is a list |
+| Log Y | Display toggle. Logarithmic scale on cartesian value axes; zeros/negatives are skipped so the chart does not crash |
 | Legend / data labels / grid | Display toggles |
 
 Colors come from Obsidian CSS variables (`--color-blue`, `--interactive-accent`, `--text-normal`, and so on), so dark theme stays readable.
 
-## List properties (tags)
+## List properties
 
-If the Bases row exposes a list (typical for `tags`), Motion Chart **unnests** it: a short tagged `cooking` and `comedy` contributes its Score to both categories. That is the right model for “which tags help.”
+If the Bases row exposes a list, Motion Chart **unnests** it: a note tagged `cooking` and `comedy` contributes its Y value to both categories.
 
-If a list never arrives as multiple values (some properties stringify as one label), create a single-value `topic` property and use that as the X-axis.
+If a list never arrives as multiple values (some properties stringify as one label), create a single-value property and use that as the X-axis.
 
 ## Build
 

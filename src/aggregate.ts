@@ -1,5 +1,5 @@
 import { isExcludedLabel, normalizeTag } from './labels.ts';
-import type { AggregatedChart, BoxFive, CalendarCell, ChartSettings, RawRow, ScatterPoint } from './types.ts';
+import type { AggregatedChart, BoxFive, CalendarCell, CategoryNote, ChartSettings, RawRow, ScatterPoint } from './types.ts';
 
 export function median(values: number[]): number {
 	if (values.length === 0) return 0;
@@ -64,9 +64,51 @@ function pushUnique(list: string[], value: string): void {
 	if (!list.includes(value)) list.push(value);
 }
 
+function noteTitle(row: RawRow): string {
+	return row.title?.trim() || row.fileName;
+}
+
+function pushNote(notes: CategoryNote[], row: RawRow, y: number): void {
+	notes.push({
+		name: noteTitle(row),
+		path: row.filePath || row.fileName,
+		y,
+	});
+}
+
+export function binCounts(
+	values: number[],
+	binCount = 16,
+	domain?: { min: number; max: number },
+): { mid: number; count: number }[] {
+	if (values.length === 0) {
+		return Array.from({ length: binCount }, (_, index) => ({ mid: index, count: 0 }));
+	}
+	const min = domain?.min ?? Math.min(...values);
+	const max = domain?.max ?? Math.max(...values);
+	if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) {
+		return [{ mid: Number.isFinite(min) ? min : 0, count: values.length }];
+	}
+	const width = (max - min) / binCount;
+	const bins = Array.from({ length: binCount }, (_, index) => ({
+		mid: min + width * (index + 0.5),
+		count: 0,
+	}));
+	for (const value of values) {
+		if (!Number.isFinite(value)) continue;
+		const index = Math.min(binCount - 1, Math.max(0, Math.floor((value - min) / width)));
+		const bin = bins[index];
+		if (bin) bin.count += 1;
+	}
+	return bins;
+}
+
 export function aggregateRows(rows: RawRow[], settings: ChartSettings): AggregatedChart {
 	const excluded = excludedSet(settings);
-	const buckets = new Map<string, { x: string; series: string; values: number[] }>();
+	const buckets = new Map<
+		string,
+		{ x: string; series: string; values: number[]; y2Values: number[]; notes: CategoryNote[] }
+	>();
 	const rawPoints: ScatterPoint[] = [];
 	const overallValues: number[] = [];
 	let numericXCount = 0;
@@ -89,7 +131,8 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 					x: row.xNumeric,
 					y: row.y,
 					series: series || 'Value',
-					name: row.fileName,
+					name: noteTitle(row),
+					path: row.filePath || row.fileName,
 				});
 			}
 		}
@@ -105,10 +148,14 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 				const key = `${series}\0${x}`;
 				let bucket = buckets.get(key);
 				if (!bucket) {
-					bucket = { x, series, values: [] };
+					bucket = { x, series, values: [], y2Values: [], notes: [] };
 					buckets.set(key, bucket);
 				}
 				bucket.values.push(settings.aggregation === 'count' ? 1 : y);
+				if (settings.y2Property && row.y2 != null && Number.isFinite(row.y2)) {
+					bucket.y2Values.push(row.y2);
+				}
+				pushNote(bucket.notes, row, y);
 			}
 		}
 	}
@@ -123,11 +170,21 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 	const names = seriesNames.length > 0 ? seriesNames : ['Value'];
 	const valueMap = new Map<string, number>();
 	const rawMap = new Map<string, number[]>();
+	const y2Map = new Map<string, number>();
+	const y2RawMap = new Map<string, number[]>();
+	const noteMap = new Map<string, CategoryNote[]>();
+	let hasY2 = false;
 	for (const bucket of buckets.values()) {
 		const series = bucket.series || 'Value';
 		const key = `${series}\0${bucket.x}`;
 		valueMap.set(key, aggregateNumbers(bucket.values, settings.aggregation));
 		rawMap.set(key, bucket.values);
+		y2RawMap.set(key, bucket.y2Values);
+		if (bucket.y2Values.length > 0) {
+			hasY2 = true;
+			y2Map.set(key, aggregateNumbers(bucket.y2Values, settings.aggregation));
+		}
+		noteMap.set(key, bucket.notes);
 	}
 
 	const categoryTotals = categories.map((category) => {
@@ -153,6 +210,19 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 	const rawValues = names.map((series) =>
 		orderedCategories.map((category) => rawMap.get(`${series}\0${category}`) ?? []),
 	);
+	const y2Values = names.map((series) =>
+		orderedCategories.map((category) => y2Map.get(`${series}\0${category}`) ?? 0),
+	);
+	const notes = names.map((series) =>
+		orderedCategories.map((category) => noteMap.get(`${series}\0${category}`) ?? []),
+	);
+	const y2Category = orderedCategories.map((category) => {
+		const combined: number[] = [];
+		for (const series of names) {
+			combined.push(...(y2RawMap.get(`${series}\0${category}`) ?? []));
+		}
+		return combined.length > 0 ? aggregateNumbers(combined, settings.aggregation) : 0;
+	});
 
 	const useRawScatter = settings.chartType === 'scatter' && numericXCount > 0;
 	const points = useRawScatter
@@ -190,6 +260,10 @@ export function aggregateRows(rows: RawRow[], settings: ChartSettings): Aggregat
 		seriesNames: names,
 		values,
 		rawValues,
+		y2Values,
+		y2Category,
+		hasY2,
+		notes,
 		points,
 		overall: overallValues.length > 0 ? aggregateNumbers(overallValues, settings.aggregation) : null,
 		calendar,

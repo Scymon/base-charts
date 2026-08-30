@@ -5,8 +5,9 @@ import { DEFAULT_EXCLUDED_TAGS, type ChartSettings, type RawRow } from './types.
 
 const settings = (overrides: Partial<ChartSettings> = {}): ChartSettings => ({
 	chartType: 'bar',
-	xProperty: 'note.Source',
-	yProperty: 'note.Score',
+	xProperty: 'note.status',
+	yProperty: 'note.amount',
+	y2Property: null,
 	seriesProperty: null,
 	aggregation: 'median',
 	filterEmptyY: true,
@@ -14,6 +15,7 @@ const settings = (overrides: Partial<ChartSettings> = {}): ChartSettings => ({
 	showLegend: true,
 	showLabels: false,
 	showGrid: true,
+	logY: false,
 	excludedTags: DEFAULT_EXCLUDED_TAGS,
 	maxCategories: 30,
 	...overrides,
@@ -44,32 +46,32 @@ describe('aggregateNumbers', () => {
 });
 
 describe('aggregateRows', () => {
-	const shorts: RawRow[] = [
-		{ xLabels: ['YouTube'], seriesLabels: [], y: 1200, xNumeric: null, fileName: 'a' },
-		{ xLabels: ['YouTube'], seriesLabels: [], y: 800, xNumeric: null, fileName: 'b' },
-		{ xLabels: ['TikTok'], seriesLabels: [], y: 4000, xNumeric: null, fileName: 'c' },
-		{ xLabels: ['YouTube'], seriesLabels: [], y: null, xNumeric: null, fileName: 'd' },
+	const rows: RawRow[] = [
+		{ xLabels: ['alpha'], seriesLabels: [], y: 1200, xNumeric: null, fileName: 'a', filePath: 'a.md' },
+		{ xLabels: ['alpha'], seriesLabels: [], y: 800, xNumeric: null, fileName: 'b', filePath: 'b.md' },
+		{ xLabels: ['beta'], seriesLabels: [], y: 4000, xNumeric: null, fileName: 'c', filePath: 'c.md' },
+		{ xLabels: ['alpha'], seriesLabels: [], y: null, xNumeric: null, fileName: 'd', filePath: 'd.md' },
 	];
 
-	it('defaults Score-style data to median, not sum', () => {
-		const result = aggregateRows(shorts, settings());
-		assert.deepEqual(result.categories, ['TikTok', 'YouTube']);
+	it('defaults numeric data to median, not sum', () => {
+		const result = aggregateRows(rows, settings());
+		assert.deepEqual(result.categories, ['beta', 'alpha']);
 		assert.equal(result.values[0]?.[0], 4000);
 		assert.equal(result.values[0]?.[1], 1000);
 		assert.equal(result.overall, 1200);
 	});
 
 	it('filters empty Y values by default', () => {
-		const counted = aggregateRows(shorts, settings({ aggregation: 'count' }));
-		const youtube = counted.categories.indexOf('YouTube');
-		assert.equal(counted.values[0]?.[youtube], 2);
+		const counted = aggregateRows(rows, settings({ aggregation: 'count' }));
+		const alpha = counted.categories.indexOf('alpha');
+		assert.equal(counted.values[0]?.[alpha], 2);
 
-		const included = aggregateRows(shorts, settings({ aggregation: 'count', filterEmptyY: false }));
-		const youtubeAll = included.categories.indexOf('YouTube');
-		assert.equal(included.values[0]?.[youtubeAll], 3);
+		const included = aggregateRows(rows, settings({ aggregation: 'count', filterEmptyY: false }));
+		const alphaAll = included.categories.indexOf('alpha');
+		assert.equal(included.values[0]?.[alphaAll], 3);
 	});
 
-	it('unnests list labels and excludes junk tags', () => {
+	it('unnests list labels and excludes configured junk labels', () => {
 		const tagged: RawRow[] = [
 			{ xLabels: ['cooking', 'viral', 'viral-video'], seriesLabels: [], y: 900, xNumeric: null, fileName: 'one' },
 			{ xLabels: ['cooking', 'comedy'], seriesLabels: [], y: 300, xNumeric: null, fileName: 'two' },
@@ -82,25 +84,39 @@ describe('aggregateRows', () => {
 	});
 
 	it('splits series and sorts by label', () => {
-		const rows: RawRow[] = [
+		const split: RawRow[] = [
 			{ xLabels: ['A'], seriesLabels: ['Main'], y: 10, xNumeric: null, fileName: 'a' },
-			{ xLabels: ['B'], seriesLabels: ['Clips'], y: 30, xNumeric: null, fileName: 'b' },
-			{ xLabels: ['A'], seriesLabels: ['Clips'], y: 20, xNumeric: null, fileName: 'c' },
+			{ xLabels: ['B'], seriesLabels: ['Alt'], y: 30, xNumeric: null, fileName: 'b' },
+			{ xLabels: ['A'], seriesLabels: ['Alt'], y: 20, xNumeric: null, fileName: 'c' },
 		];
-		const result = aggregateRows(rows, settings({ aggregation: 'sum', sort: 'label-asc' }));
+		const result = aggregateRows(split, settings({ aggregation: 'sum', sort: 'label-asc' }));
 		assert.deepEqual(result.categories, ['A', 'B']);
-		assert.deepEqual([...result.seriesNames].sort(), ['Clips', 'Main']);
-		const clips = result.seriesNames.indexOf('Clips');
+		assert.deepEqual([...result.seriesNames].sort(), ['Alt', 'Main']);
+		const alt = result.seriesNames.indexOf('Alt');
 		const main = result.seriesNames.indexOf('Main');
-		assert.equal(result.values[clips]?.[0], 20);
+		assert.equal(result.values[alt]?.[0], 20);
 		assert.equal(result.values[main]?.[0], 10);
-		assert.equal(result.values[clips]?.[1], 30);
+		assert.equal(result.values[alt]?.[1], 30);
 	});
 
 	it('keeps raw Y values per category for boxplot', () => {
-		const result = aggregateRows(shorts, settings({ chartType: 'boxplot' }));
-		const youtube = result.categories.indexOf('YouTube');
-		assert.deepEqual([...(result.rawValues[0]?.[youtube] ?? [])].sort((a, b) => a - b), [800, 1200]);
+		const result = aggregateRows(rows, settings({ chartType: 'boxplot' }));
+		const alpha = result.categories.indexOf('alpha');
+		assert.deepEqual([...(result.rawValues[0]?.[alpha] ?? [])].sort((a, b) => a - b), [800, 1200]);
 		assert.deepEqual(boxFive([800, 1200, 4000]), [800, 1000, 1200, 2600, 4000]);
+	});
+
+	it('aggregates an optional Y2 property without filtering the row', () => {
+		const dual: RawRow[] = [
+			{ xLabels: ['alpha'], seriesLabels: [], y: 100, y2: 0.04, xNumeric: null, fileName: 'a', filePath: 'a.md' },
+			{ xLabels: ['alpha'], seriesLabels: [], y: 300, y2: 0.08, xNumeric: null, fileName: 'b', filePath: 'b.md' },
+			{ xLabels: ['beta'], seriesLabels: [], y: 900, y2: null, xNumeric: null, fileName: 'c', filePath: 'c.md' },
+		];
+		const result = aggregateRows(dual, settings({ y2Property: 'note.rate' }));
+		const alpha = result.categories.indexOf('alpha');
+		assert.equal(result.hasY2, true);
+		assert.equal(result.y2Category[alpha], 0.06);
+		assert.equal(result.notes[0]?.[alpha]?.length, 2);
+		assert.equal(result.notes[0]?.[alpha]?.[0]?.path, 'a.md');
 	});
 });
