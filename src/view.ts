@@ -1,5 +1,6 @@
 import {
 	BasesView,
+	Menu,
 	parsePropertyId,
 	type BasesPropertyId,
 	type QueryController,
@@ -84,6 +85,14 @@ import {
 	type RawRow,
 } from './types.ts';
 import { parseExcludedTags } from './labels.ts';
+import {
+	legendColorNames,
+	legendNameFromChartEvent,
+	legendNameFromZrTarget,
+	nativeMouseEventFromChartEvent,
+	parseSeriesColors,
+	toColorInputValue,
+} from './seriesColors.ts';
 import { asNumber, categoryLabels } from './values.ts';
 
 echarts.use([
@@ -141,6 +150,7 @@ export class MotionChartView extends BasesView {
 	private clickBound = false;
 	private drillName: string | null = null;
 	private lastChartType: ChartSettings['chartType'] | null = null;
+	private colorMenuAt = 0;
 	private categoryAxisPlans: {
 		placement: 'bottom' | 'left';
 		labels: string[];
@@ -188,6 +198,7 @@ export class MotionChartView extends BasesView {
 			},
 			true,
 		);
+		this.registerDomEvent(this.chartEl, 'contextmenu', (event) => this.onLegendContextMenu(event));
 	}
 
 	onunload(): void {
@@ -306,6 +317,7 @@ export class MotionChartView extends BasesView {
 		if (!this.clickBound && this.chart) {
 			this.clickBound = true;
 			this.chart.on('click', (params) => this.onChartClick(params as ClickPayload));
+			this.chart.on('contextmenu', (params) => this.onChartContextMenu(params));
 			this.chart.on('mouseover', (params) => {
 				const range = this.resolveViewEllipsis(params);
 				if (!range) return;
@@ -350,6 +362,104 @@ export class MotionChartView extends BasesView {
 			});
 		}
 		return this.chart;
+	}
+
+	private onLegendContextMenu(event: MouseEvent): void {
+		const name = this.legendNameAtPointer(event);
+		if (!name) return;
+		event.preventDefault();
+		event.stopPropagation();
+		this.showSeriesColorMenu(name, event);
+	}
+
+	private onChartContextMenu(payload: unknown): void {
+		const names = this.legendNames();
+		const name = legendNameFromChartEvent(payload, names);
+		if (!name) return;
+		const native = nativeMouseEventFromChartEvent(payload);
+		native?.preventDefault();
+		native?.stopPropagation();
+		this.showSeriesColorMenu(name, native);
+	}
+
+	private showSeriesColorMenu(seriesName: string, event: MouseEvent | null): void {
+		const now = Date.now();
+		if (now - this.colorMenuAt < 250) return;
+		this.colorMenuAt = now;
+		const menu = new Menu();
+		menu.addItem((item) => {
+			item.setTitle('Change color');
+			item.setIcon('palette');
+			item.onClick(() => this.pickSeriesColor(seriesName));
+		});
+		if (event) {
+			menu.showAtMouseEvent(event);
+			return;
+		}
+		const rect = this.chartEl.getBoundingClientRect();
+		menu.showAtPosition({ x: rect.left + 16, y: rect.top + 16 });
+	}
+
+	private pickSeriesColor(seriesName: string): void {
+		const input = this.rootEl.createEl('input', { type: 'color' });
+		input.value = toColorInputValue(this.currentSeriesColor(seriesName));
+		input.style.position = 'fixed';
+		input.style.left = '-9999px';
+		input.style.width = '0';
+		input.style.height = '0';
+		input.style.opacity = '0';
+		const apply = () => {
+			const color = parseSeriesColors({ [seriesName]: input.value })[seriesName];
+			if (color) this.saveSeriesColor(seriesName, color);
+		};
+		input.addEventListener('input', apply);
+		input.addEventListener('change', () => {
+			apply();
+			input.remove();
+		});
+		input.click();
+		window.setTimeout(() => {
+			if (!input.isConnected) return;
+			window.setTimeout(() => input.remove(), 60_000);
+		}, 0);
+	}
+
+	private saveSeriesColor(seriesName: string, color: string): void {
+		const current = this.readSettings().seriesColors ?? {};
+		if (current[seriesName] === color) return;
+		this.config.set('seriesColors', { ...current, [seriesName]: color });
+		this.render();
+	}
+
+	private currentSeriesColor(seriesName: string): string {
+		const settings = this.readSettings();
+		const override = settings.seriesColors?.[seriesName];
+		if (override) return override;
+		const names = this.legendNames();
+		const index = names.indexOf(seriesName);
+		const theme = readChartTheme(this.rootEl);
+		if (index < 0) return theme.colors[0] ?? '#70b8ff';
+		return theme.colors[index % theme.colors.length] ?? theme.colors[0] ?? '#70b8ff';
+	}
+
+	private legendNames(): string[] {
+		const data = this.lastData;
+		if (!data) return [];
+		return legendColorNames(this.readSettings().chartType, data);
+	}
+
+	private legendNameAtPointer(event: MouseEvent): string | null {
+		const chart = this.chart;
+		if (!chart) return null;
+		const names = this.legendNames();
+		if (names.length === 0) return null;
+		const rect = this.chartEl.getBoundingClientRect();
+		const x = event.clientX - rect.left;
+		const y = event.clientY - rect.top;
+		const hover = (
+			chart.getZr() as { findHover?: (px: number, py: number) => { target?: unknown } | undefined }
+		).findHover?.(x, y);
+		return legendNameFromZrTarget(hover?.target, names);
 	}
 
 	private onChartClick(payload: ClickPayload): void {
@@ -592,6 +702,7 @@ export class MotionChartView extends BasesView {
 			excludedTags: parseExcludedTags(config.get('excludedTags'), DEFAULT_EXCLUDED_TAGS),
 			maxCategories: asNumberSetting(config.get('maxCategories'), 30),
 			minCategoryNotes: Math.max(1, Math.floor(asNumberSetting(config.get('minCategoryNotes'), 1))),
+			seriesColors: parseSeriesColors(config.get('seriesColors')),
 		};
 	}
 

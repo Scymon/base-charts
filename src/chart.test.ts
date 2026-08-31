@@ -158,6 +158,47 @@ describe('buildChartOption', () => {
 		assert.equal(option.backgroundColor, 'transparent');
 	});
 
+	it('applies persisted series color overrides and leaves unset series on the theme palette', () => {
+		const grouped = aggregateRows(
+			[
+				{ xLabels: ['alpha'], seriesLabels: ['east'], y: 10, xNumeric: null, fileName: 'a' },
+				{ xLabels: ['alpha'], seriesLabels: ['west'], y: 20, xNumeric: null, fileName: 'b' },
+				{ xLabels: ['beta'], seriesLabels: ['east'], y: 30, xNumeric: null, fileName: 'c' },
+				{ xLabels: ['beta'], seriesLabels: ['west'], y: 40, xNumeric: null, fileName: 'd' },
+			],
+			settings({ chartType: 'area-stacked', seriesProperty: 'note.group' }),
+		);
+		const option = buildChartOption(
+			grouped,
+			settings({
+				chartType: 'area-stacked',
+				seriesProperty: 'note.group',
+				seriesColors: { west: '#ff00aa' },
+			}),
+			theme,
+			false,
+		);
+		const colors = option.color as string[];
+		const west = grouped.seriesNames.indexOf('west');
+		const east = grouped.seriesNames.indexOf('east');
+		assert.ok(west >= 0 && east >= 0);
+		assert.equal(colors[west], '#ff00aa');
+		assert.equal(colors[east], theme.colors[east % theme.colors.length]);
+
+		const pie = buildChartOption(
+			grouped,
+			settings({ chartType: 'pie', seriesColors: { beta: '#112233' } }),
+			theme,
+			false,
+		);
+		const pieColors = pie.color as string[];
+		const beta = grouped.categories.indexOf('beta');
+		const alpha = grouped.categories.indexOf('alpha');
+		assert.ok(beta >= 0 && alpha >= 0);
+		assert.equal(pieColors[beta], '#112233');
+		assert.equal(pieColors[alpha], theme.colors[alpha % theme.colors.length]);
+	});
+
 	it('shows every rotated X label on a dense vertical bar chart', () => {
 		const labels = [
 			'source-jammles9',
