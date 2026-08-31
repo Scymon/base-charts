@@ -77,6 +77,8 @@ export interface ChartSettings {
 	maxCategories: number;
 	/** Distinct notes required in an X category. 1 keeps every category (no sift). */
 	minCategoryNotes: number;
+	/** Per-legend-name color overrides. Unset names keep the theme palette. */
+	seriesColors?: Record<string, string>;
 }
 
 export interface RawRow {

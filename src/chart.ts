@@ -9,6 +9,7 @@ import { categoryAxisLabelHandlers, DEFAULT_AXIS_LENGTH, planCategoryAxisTicks }
 import { hasTimeCategories } from './time.ts';
 import { formatAxisTick, formatNumber } from './format.ts';
 import { formatCategoryTooltip } from './tooltip.ts';
+import { applySeriesColorOverrides, legendColorNames } from './seriesColors.ts';
 import type { AggregatedChart, ChartSettings, ChartTheme } from './types.ts';
 
 const CARTESIAN_TYPES = new Set<ChartSettings['chartType']>([
@@ -675,7 +676,11 @@ export function buildChartOption(
 	extras: { drillName?: string | null } = {},
 ): EChartsOption {
 	const anim = animationConfig(reduceMotion);
-	const colors = theme.colors;
+	const colors = applySeriesColorOverrides(
+		theme.colors,
+		legendColorNames(settings.chartType, data),
+		settings.seriesColors,
+	);
 	const logY = shouldApplyLogY(settings, data);
 	const legend = {
 		show:
