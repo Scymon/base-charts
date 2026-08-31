@@ -79,7 +79,7 @@ Junk list labels (`viral`, `viral-video`, and similar) stay excluded by default;
 | Min n | Optional. Default **1** shows every category. Higher drops groups with fewer notes (distinct note count; one note with the same label twice still counts as 1). Applied before max categories. Time axes skip this so a one-note week or day stays on the calendar |
 | Exclude tags | Applied when the X-axis or series is a list |
 | Log Y | Display toggle. Logarithmic scale on cartesian value axes; zeros/negatives are skipped so the chart does not crash |
-| Legend / data labels / grid | Display toggles |
+| Legend / data labels / grid | Display toggles. Right-click a legend item to set that series' color; the choice is saved on the view |
 
 Colors come from Obsidian CSS variables (`--color-blue`, `--interactive-accent`, `--text-normal`, and so on), so dark theme stays readable.
 
