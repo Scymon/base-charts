@@ -3,7 +3,9 @@ import { describe, it } from 'node:test';
 import { aggregateRows } from './aggregate.ts';
 import {
 	applySeriesColorOverrides,
-	colorPickerAnchorBox,
+	colorPopoverPosition,
+	hexToHsv,
+	hsvToHex,
 	legendColorNames,
 	legendItemGroupFromZrTarget,
 	legendNameFromChartEvent,
@@ -146,22 +148,42 @@ describe('legend item picker anchor', () => {
 		assert.deepEqual(zrElementChartRect(el), { x: 40, y: 12, width: 80, height: 14 });
 	});
 
-	it('anchors the color input on the legend item, else the pointer', () => {
+	it('places the popover under the legend item, else the pointer', () => {
+		const size = { width: 180, height: 168 };
+		const viewport = { width: 1000, height: 800 };
 		assert.deepEqual(
-			colorPickerAnchorBox({ x: 500, y: 80 }, { x: 120, y: 40, width: 90, height: 14 }, { x: 0, y: 0 }),
-			{ left: 120, top: 40, width: 90, height: 16 },
+			colorPopoverPosition({ x: 500, y: 80 }, { x: 120, y: 40, width: 90, height: 14 }, { x: 0, y: 0 }, size, viewport),
+			{ left: 120, top: 60 },
 		);
-		assert.deepEqual(colorPickerAnchorBox({ x: 500, y: 80 }, null, { x: 8, y: 8 }), {
+		assert.deepEqual(colorPopoverPosition({ x: 500, y: 80 }, null, { x: 8, y: 8 }, size, viewport), {
 			left: 500,
-			top: 80,
-			width: 16,
-			height: 16,
+			top: 86,
 		});
-		assert.deepEqual(colorPickerAnchorBox(null, null, { x: 8, y: 8 }), {
+		assert.deepEqual(colorPopoverPosition(null, null, { x: 8, y: 8 }, size, viewport), {
 			left: 8,
-			top: 8,
-			width: 16,
-			height: 16,
+			top: 14,
 		});
+	});
+
+	it('flips above the item and clamps to the viewport', () => {
+		const size = { width: 180, height: 168 };
+		const viewport = { width: 1000, height: 800 };
+		assert.deepEqual(
+			colorPopoverPosition(null, { x: 100, y: 700, width: 80, height: 14 }, { x: 0, y: 0 }, size, viewport),
+			{ left: 100, top: 526 },
+		);
+		assert.deepEqual(
+			colorPopoverPosition(null, { x: 900, y: 40, width: 80, height: 14 }, { x: 0, y: 0 }, size, viewport),
+			{ left: 812, top: 60 },
+		);
+	});
+});
+
+describe('hsv hex conversion', () => {
+	it('round-trips primary colors and the chart blue', () => {
+		for (const hex of ['#000000', '#ffffff', '#ff0000', '#00ff00', '#0000ff', '#027aff']) {
+			const hsv = hexToHsv(hex);
+			assert.equal(hsvToHex(hsv.h, hsv.s, hsv.v), hex);
+		}
 	});
 });

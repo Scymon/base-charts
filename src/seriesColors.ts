@@ -192,25 +192,109 @@ export function zrElementChartRect(el: unknown): { x: number; y: number; width: 
 	};
 }
 
-const COLOR_PICKER_MIN = 16;
+export type ColorPopoverPoint = { x: number; y: number };
+export type ColorPopoverRect = { x: number; y: number; width: number; height: number };
+export type ColorPopoverSize = { width: number; height: number };
+export type HsvColor = { h: number; s: number; v: number };
 
-/** Viewport box for the hidden `input[type=color]` so the OS picker anchors on the legend item. */
-export function colorPickerAnchorBox(
-	pointer: { x: number; y: number } | null | undefined,
-	item: { x: number; y: number; width: number; height: number } | null | undefined,
-	fallback: { x: number; y: number },
-): { left: number; top: number; width: number; height: number } {
-	if (item && Number.isFinite(item.x) && Number.isFinite(item.y) && item.width > 0 && item.height > 0) {
-		return {
-			left: item.x,
-			top: item.y,
-			width: Math.max(COLOR_PICKER_MIN, item.width),
-			height: Math.max(COLOR_PICKER_MIN, item.height),
-		};
+const POPOVER_GAP = 6;
+const POPOVER_INSET = 8;
+
+/** Place the on-screen color popover under the legend item (else the pointer). */
+export function colorPopoverPosition(
+	pointer: ColorPopoverPoint | null | undefined,
+	item: ColorPopoverRect | null | undefined,
+	fallback: ColorPopoverPoint,
+	size: ColorPopoverSize,
+	viewport: ColorPopoverSize,
+): { left: number; top: number } {
+	const width = Math.max(1, size.width);
+	const height = Math.max(1, size.height);
+	let left: number;
+	let top: number;
+	if (isFiniteRect(item)) {
+		left = item.x;
+		top = item.y + item.height + POPOVER_GAP;
+		const fitsBelow = top + height <= viewport.height - POPOVER_INSET;
+		const fitsAbove = item.y - POPOVER_GAP - height >= POPOVER_INSET;
+		if (!fitsBelow && fitsAbove) top = item.y - POPOVER_GAP - height;
+	} else {
+		const origin = isFinitePoint(pointer) ? pointer : fallback;
+		left = origin.x;
+		top = origin.y + POPOVER_GAP;
 	}
-	const origin =
-		pointer && Number.isFinite(pointer.x) && Number.isFinite(pointer.y) ? pointer : fallback;
-	return { left: origin.x, top: origin.y, width: COLOR_PICKER_MIN, height: COLOR_PICKER_MIN };
+	const maxLeft = Math.max(POPOVER_INSET, viewport.width - width - POPOVER_INSET);
+	const maxTop = Math.max(POPOVER_INSET, viewport.height - height - POPOVER_INSET);
+	return {
+		left: Math.min(Math.max(POPOVER_INSET, left), maxLeft),
+		top: Math.min(Math.max(POPOVER_INSET, top), maxTop),
+	};
+}
+
+export function hexToHsv(color: string): HsvColor {
+	const hex = toColorInputValue(color);
+	const r = Number.parseInt(hex.slice(1, 3), 16) / 255;
+	const g = Number.parseInt(hex.slice(3, 5), 16) / 255;
+	const b = Number.parseInt(hex.slice(5, 7), 16) / 255;
+	const max = Math.max(r, g, b);
+	const min = Math.min(r, g, b);
+	const delta = max - min;
+	let h = 0;
+	if (delta !== 0) {
+		if (max === r) h = ((g - b) / delta) % 6;
+		else if (max === g) h = (b - r) / delta + 2;
+		else h = (r - g) / delta + 4;
+		h *= 60;
+		if (h < 0) h += 360;
+	}
+	return { h, s: max === 0 ? 0 : delta / max, v: max };
+}
+
+export function hsvToHex(h: number, s: number, v: number): string {
+	const hue = ((h % 360) + 360) % 360;
+	const sat = clamp01(s);
+	const val = clamp01(v);
+	const chroma = val * sat;
+	const x = chroma * (1 - Math.abs(((hue / 60) % 2) - 1));
+	const m = val - chroma;
+	let r = 0;
+	let g = 0;
+	let b = 0;
+	if (hue < 60) {
+		r = chroma;
+		g = x;
+	} else if (hue < 120) {
+		r = x;
+		g = chroma;
+	} else if (hue < 180) {
+		g = chroma;
+		b = x;
+	} else if (hue < 240) {
+		g = x;
+		b = chroma;
+	} else if (hue < 300) {
+		r = x;
+		b = chroma;
+	} else {
+		r = chroma;
+		b = x;
+	}
+	const byte = (channel: number) => Math.round((channel + m) * 255).toString(16).padStart(2, '0');
+	return `#${byte(r)}${byte(g)}${byte(b)}`;
+}
+
+function isFinitePoint(point: ColorPopoverPoint | null | undefined): point is ColorPopoverPoint {
+	return Boolean(point && Number.isFinite(point.x) && Number.isFinite(point.y));
+}
+
+function isFiniteRect(rect: ColorPopoverRect | null | undefined): rect is ColorPopoverRect {
+	return Boolean(
+		rect && Number.isFinite(rect.x) && Number.isFinite(rect.y) && rect.width > 0 && rect.height > 0,
+	);
+}
+
+function clamp01(value: number): number {
+	return Math.min(1, Math.max(0, value));
 }
 
 function namedCount(names: string[]): number {

@@ -86,15 +86,20 @@ import {
 } from './types.ts';
 import { parseExcludedTags } from './labels.ts';
 import {
-	colorPickerAnchorBox,
+	colorPopoverPosition,
+	hexToHsv,
+	hsvToHex,
 	legendColorNames,
 	legendItemGroupFromZrTarget,
 	legendNameFromChartEvent,
 	legendNameFromZrTarget,
 	nativeMouseEventFromChartEvent,
+	normalizeHexColor,
 	parseSeriesColors,
-	toColorInputValue,
 	zrElementChartRect,
+	type ColorPopoverPoint,
+	type ColorPopoverRect,
+	type HsvColor,
 } from './seriesColors.ts';
 import { asNumber, categoryLabels } from './values.ts';
 
@@ -154,6 +159,8 @@ export class MotionChartView extends BasesView {
 	private drillName: string | null = null;
 	private lastChartType: ChartSettings['chartType'] | null = null;
 	private colorMenuAt = 0;
+	private colorPopover: HTMLElement | null = null;
+	private colorPopoverTimer = 0;
 	private categoryAxisPlans: {
 		placement: 'bottom' | 'left';
 		labels: string[];
@@ -187,6 +194,12 @@ export class MotionChartView extends BasesView {
 		this.registerEvent(this.app.workspace.on('css-change', () => this.render()));
 		this.registerDomEvent(document, 'pointerdown', (event) => {
 			if (!this.notesEl.contains(event.target as Node)) this.hideNotes();
+			if (this.colorPopover && !this.colorPopover.contains(event.target as Node)) {
+				this.hideColorPopover();
+			}
+		});
+		this.registerDomEvent(document, 'keydown', (event) => {
+			if (event.key === 'Escape') this.hideColorPopover();
 		});
 		this.registerDomEvent(
 			this.rootEl,
@@ -205,6 +218,7 @@ export class MotionChartView extends BasesView {
 	}
 
 	onunload(): void {
+		this.hideColorPopover();
 		this.chart?.dispose();
 		this.chart = null;
 	}
@@ -390,35 +404,27 @@ export class MotionChartView extends BasesView {
 		if (now - this.colorMenuAt < 250) return;
 		this.colorMenuAt = now;
 		const pointer = event ? { x: event.clientX, y: event.clientY } : null;
-		const anchor = this.seriesColorPickerBox(seriesName, pointer);
+		const chartRect = this.chartEl.getBoundingClientRect();
+		const item = this.legendItemViewportRect(seriesName, pointer, chartRect);
+		const fallback = { x: chartRect.left + 16, y: chartRect.top + 16 };
 		const menu = new Menu();
-		menu.addItem((item) => {
-			item.setTitle('Change color');
-			item.setIcon('palette');
-			item.onClick(() => this.pickSeriesColor(seriesName, anchor));
+		menu.addItem((itemEl) => {
+			itemEl.setTitle('Change color');
+			itemEl.setIcon('palette');
+			itemEl.onClick(() => this.pickSeriesColor(seriesName, pointer, item, fallback));
 		});
 		if (event) {
 			menu.showAtMouseEvent(event);
 			return;
 		}
-		const rect = this.chartEl.getBoundingClientRect();
-		menu.showAtPosition({ x: rect.left + 16, y: rect.top + 16 });
-	}
-
-	private seriesColorPickerBox(
-		seriesName: string,
-		pointer: { x: number; y: number } | null,
-	): { left: number; top: number; width: number; height: number } {
-		const chartRect = this.chartEl.getBoundingClientRect();
-		const item = this.legendItemViewportRect(seriesName, pointer, chartRect);
-		return colorPickerAnchorBox(pointer, item, { x: chartRect.left + 16, y: chartRect.top + 16 });
+		menu.showAtPosition({ x: fallback.x, y: fallback.y });
 	}
 
 	private legendItemViewportRect(
 		seriesName: string,
-		pointer: { x: number; y: number } | null,
+		pointer: ColorPopoverPoint | null,
 		chartRect: DOMRect,
-	): { x: number; y: number; width: number; height: number } | null {
+	): ColorPopoverRect | null {
 		const chart = this.chart;
 		if (!chart || !pointer) return null;
 		const hover = (
@@ -436,39 +442,141 @@ export class MotionChartView extends BasesView {
 		};
 	}
 
+	/** On-screen HSV popover under the legend item. Do not open a hidden input[type=color]. */
 	private pickSeriesColor(
 		seriesName: string,
-		anchor: { left: number; top: number; width: number; height: number },
+		pointer: ColorPopoverPoint | null,
+		item: ColorPopoverRect | null,
+		fallback: ColorPopoverPoint,
 	): void {
+		this.hideColorPopover();
 		const doc = this.rootEl.ownerDocument;
-		const input = doc.createElement('input');
-		input.type = 'color';
-		input.value = toColorInputValue(this.currentSeriesColor(seriesName));
-		input.style.position = 'fixed';
-		input.style.left = `${anchor.left}px`;
-		input.style.top = `${anchor.top}px`;
-		input.style.width = `${anchor.width}px`;
-		input.style.height = `${anchor.height}px`;
-		input.style.opacity = '0';
-		input.style.padding = '0';
-		input.style.margin = '0';
-		input.style.border = '0';
-		input.style.pointerEvents = 'none';
-		doc.body.appendChild(input);
-		const apply = () => {
-			const color = parseSeriesColors({ [seriesName]: input.value })[seriesName];
+		const win = doc.defaultView ?? window;
+		const pop = doc.createElement('div');
+		pop.className = 'motion-chart-color-popover';
+		pop.setAttribute('role', 'dialog');
+		pop.setAttribute('aria-label', 'Change series color');
+
+		const sv = doc.createElement('div');
+		sv.className = 'motion-chart-color-sv';
+		const thumb = doc.createElement('div');
+		thumb.className = 'motion-chart-color-sv-thumb';
+		sv.appendChild(thumb);
+
+		const hue = doc.createElement('input');
+		hue.type = 'range';
+		hue.className = 'motion-chart-color-hue';
+		hue.min = '0';
+		hue.max = '360';
+		hue.step = '1';
+
+		const row = doc.createElement('div');
+		row.className = 'motion-chart-color-row';
+		const swatch = doc.createElement('span');
+		swatch.className = 'motion-chart-color-swatch';
+		const hex = doc.createElement('input');
+		hex.type = 'text';
+		hex.className = 'motion-chart-color-hex';
+		hex.spellcheck = false;
+		hex.maxLength = 7;
+		row.appendChild(swatch);
+		row.appendChild(hex);
+
+		pop.appendChild(sv);
+		pop.appendChild(hue);
+		pop.appendChild(row);
+		pop.style.visibility = 'hidden';
+		doc.body.appendChild(pop);
+		this.colorPopover = pop;
+
+		const hsv: HsvColor = hexToHsv(this.currentSeriesColor(seriesName));
+		const paint = () => {
+			const color = hsvToHex(hsv.h, hsv.s, hsv.v);
+			sv.style.background = [
+				'linear-gradient(to top, #000, transparent)',
+				`linear-gradient(to right, #fff, hsl(${hsv.h}, 100%, 50%))`,
+			].join(', ');
+			thumb.style.left = `${hsv.s * 100}%`;
+			thumb.style.top = `${(1 - hsv.v) * 100}%`;
+			hue.value = String(Math.round(hsv.h));
+			swatch.style.background = color;
+			if (doc.activeElement !== hex) hex.value = color;
+		};
+		const commit = () => {
+			const color = parseSeriesColors({ [seriesName]: hsvToHex(hsv.h, hsv.s, hsv.v) })[seriesName];
 			if (color) this.saveSeriesColor(seriesName, color);
 		};
-		input.addEventListener('input', apply);
-		input.addEventListener('change', () => {
-			apply();
-			input.remove();
+		const scheduleCommit = () => {
+			win.clearTimeout(this.colorPopoverTimer);
+			this.colorPopoverTimer = win.setTimeout(commit, 80);
+		};
+		const readSv = (event: PointerEvent) => {
+			const box = sv.getBoundingClientRect();
+			if (box.width <= 0 || box.height <= 0) return;
+			hsv.s = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width));
+			hsv.v = Math.min(1, Math.max(0, 1 - (event.clientY - box.top) / box.height));
+			paint();
+			scheduleCommit();
+		};
+
+		sv.addEventListener('pointerdown', (event) => {
+			event.preventDefault();
+			sv.setPointerCapture(event.pointerId);
+			readSv(event);
 		});
-		input.click();
-		window.setTimeout(() => {
-			if (!input.isConnected) return;
-			window.setTimeout(() => input.remove(), 60_000);
-		}, 0);
+		sv.addEventListener('pointermove', (event) => {
+			if (!sv.hasPointerCapture(event.pointerId)) return;
+			readSv(event);
+		});
+		sv.addEventListener('pointerup', (event) => {
+			if (sv.hasPointerCapture(event.pointerId)) sv.releasePointerCapture(event.pointerId);
+			commit();
+		});
+		hue.addEventListener('input', () => {
+			hsv.h = Number(hue.value);
+			paint();
+			scheduleCommit();
+		});
+		hue.addEventListener('change', commit);
+		const applyHex = () => {
+			const next = normalizeHexColor(hex.value.trim()) ?? normalizeHexColor(`#${hex.value.trim()}`);
+			if (!next) {
+				hex.value = hsvToHex(hsv.h, hsv.s, hsv.v);
+				return;
+			}
+			const parsed = hexToHsv(next);
+			hsv.h = parsed.h;
+			hsv.s = parsed.s;
+			hsv.v = parsed.v;
+			paint();
+			commit();
+		};
+		hex.addEventListener('change', applyHex);
+		hex.addEventListener('keydown', (event) => {
+			if (event.key === 'Enter') {
+				event.preventDefault();
+				applyHex();
+			}
+		});
+		pop.addEventListener('pointerdown', (event) => event.stopPropagation());
+		pop.addEventListener('contextmenu', (event) => event.preventDefault());
+
+		paint();
+		const box = pop.getBoundingClientRect();
+		const pos = colorPopoverPosition(pointer, item, fallback, box, {
+			width: win.innerWidth,
+			height: win.innerHeight,
+		});
+		pop.style.left = `${pos.left}px`;
+		pop.style.top = `${pos.top}px`;
+		pop.style.visibility = '';
+	}
+
+	private hideColorPopover(): void {
+		window.clearTimeout(this.colorPopoverTimer);
+		this.colorPopoverTimer = 0;
+		this.colorPopover?.remove();
+		this.colorPopover = null;
 	}
 
 	private saveSeriesColor(seriesName: string, color: string): void {
@@ -721,6 +829,7 @@ export class MotionChartView extends BasesView {
 	}
 
 	private showEmpty(message: string): void {
+		this.hideColorPopover();
 		this.chart?.clear();
 		this.chartEl.classList.remove('motion-chart-has-slider', 'motion-chart-has-slider-vertical');
 		this.chartEl.hide();
