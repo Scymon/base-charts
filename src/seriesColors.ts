@@ -138,6 +138,81 @@ export function nativeMouseEventFromChartEvent(payload: unknown): MouseEvent | n
 	return inner instanceof MouseEvent ? inner : null;
 }
 
+/** The legend item group ECharts stamps with `__legendDataIndex`, else the hover target. */
+export function legendItemGroupFromZrTarget(
+	target: unknown,
+	orderedNames: string[],
+	seriesName: string,
+): unknown | null {
+	let current: unknown = target;
+	let group: unknown = null;
+	while (current && typeof current === 'object') {
+		const rec = current as Record<string, unknown>;
+		if (typeof rec.__legendDataIndex === 'number' && orderedNames[rec.__legendDataIndex] === seriesName) {
+			group = current;
+		}
+		current = rec.parent;
+	}
+	if (group) return group;
+	return legendNameFromZrTarget(target, orderedNames) === seriesName ? target : null;
+}
+
+/** Chart-local box of a ZRender element (canvas pixels, not the viewport). */
+export function zrElementChartRect(el: unknown): { x: number; y: number; width: number; height: number } | null {
+	if (!el || typeof el !== 'object') return null;
+	const node = el as {
+		getBoundingRect?: () => { x: number; y: number; width: number; height: number };
+		transformCoordToGlobal?: (x: number, y: number) => number[] | { x: number; y: number };
+	};
+	const local = node.getBoundingRect?.();
+	if (!local || local.width <= 0 || local.height <= 0) return null;
+	const map = (x: number, y: number): { x: number; y: number } | null => {
+		if (typeof node.transformCoordToGlobal !== 'function') return { x, y };
+		const out = node.transformCoordToGlobal(x, y);
+		if (Array.isArray(out)) {
+			const px = Number(out[0]);
+			const py = Number(out[1]);
+			return Number.isFinite(px) && Number.isFinite(py) ? { x: px, y: py } : null;
+		}
+		if (out && typeof out === 'object') {
+			const px = Number(out.x);
+			const py = Number(out.y);
+			return Number.isFinite(px) && Number.isFinite(py) ? { x: px, y: py } : null;
+		}
+		return null;
+	};
+	const tl = map(local.x, local.y);
+	const br = map(local.x + local.width, local.y + local.height);
+	if (!tl || !br) return null;
+	return {
+		x: Math.min(tl.x, br.x),
+		y: Math.min(tl.y, br.y),
+		width: Math.abs(br.x - tl.x),
+		height: Math.abs(br.y - tl.y),
+	};
+}
+
+const COLOR_PICKER_MIN = 16;
+
+/** Viewport box for the hidden `input[type=color]` so the OS picker anchors on the legend item. */
+export function colorPickerAnchorBox(
+	pointer: { x: number; y: number } | null | undefined,
+	item: { x: number; y: number; width: number; height: number } | null | undefined,
+	fallback: { x: number; y: number },
+): { left: number; top: number; width: number; height: number } {
+	if (item && Number.isFinite(item.x) && Number.isFinite(item.y) && item.width > 0 && item.height > 0) {
+		return {
+			left: item.x,
+			top: item.y,
+			width: Math.max(COLOR_PICKER_MIN, item.width),
+			height: Math.max(COLOR_PICKER_MIN, item.height),
+		};
+	}
+	const origin =
+		pointer && Number.isFinite(pointer.x) && Number.isFinite(pointer.y) ? pointer : fallback;
+	return { left: origin.x, top: origin.y, width: COLOR_PICKER_MIN, height: COLOR_PICKER_MIN };
+}
+
 function namedCount(names: string[]): number {
 	return names.filter((name) => name.trim() !== '').length;
 }

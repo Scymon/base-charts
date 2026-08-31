@@ -86,12 +86,15 @@ import {
 } from './types.ts';
 import { parseExcludedTags } from './labels.ts';
 import {
+	colorPickerAnchorBox,
 	legendColorNames,
+	legendItemGroupFromZrTarget,
 	legendNameFromChartEvent,
 	legendNameFromZrTarget,
 	nativeMouseEventFromChartEvent,
 	parseSeriesColors,
 	toColorInputValue,
+	zrElementChartRect,
 } from './seriesColors.ts';
 import { asNumber, categoryLabels } from './values.ts';
 
@@ -386,11 +389,13 @@ export class MotionChartView extends BasesView {
 		const now = Date.now();
 		if (now - this.colorMenuAt < 250) return;
 		this.colorMenuAt = now;
+		const pointer = event ? { x: event.clientX, y: event.clientY } : null;
+		const anchor = this.seriesColorPickerBox(seriesName, pointer);
 		const menu = new Menu();
 		menu.addItem((item) => {
 			item.setTitle('Change color');
 			item.setIcon('palette');
-			item.onClick(() => this.pickSeriesColor(seriesName));
+			item.onClick(() => this.pickSeriesColor(seriesName, anchor));
 		});
 		if (event) {
 			menu.showAtMouseEvent(event);
@@ -400,14 +405,56 @@ export class MotionChartView extends BasesView {
 		menu.showAtPosition({ x: rect.left + 16, y: rect.top + 16 });
 	}
 
-	private pickSeriesColor(seriesName: string): void {
-		const input = this.rootEl.createEl('input', { type: 'color' });
+	private seriesColorPickerBox(
+		seriesName: string,
+		pointer: { x: number; y: number } | null,
+	): { left: number; top: number; width: number; height: number } {
+		const chartRect = this.chartEl.getBoundingClientRect();
+		const item = this.legendItemViewportRect(seriesName, pointer, chartRect);
+		return colorPickerAnchorBox(pointer, item, { x: chartRect.left + 16, y: chartRect.top + 16 });
+	}
+
+	private legendItemViewportRect(
+		seriesName: string,
+		pointer: { x: number; y: number } | null,
+		chartRect: DOMRect,
+	): { x: number; y: number; width: number; height: number } | null {
+		const chart = this.chart;
+		if (!chart || !pointer) return null;
+		const hover = (
+			chart.getZr() as { findHover?: (px: number, py: number) => { target?: unknown } | undefined }
+		).findHover?.(pointer.x - chartRect.left, pointer.y - chartRect.top);
+		const local = zrElementChartRect(
+			legendItemGroupFromZrTarget(hover?.target, this.legendNames(), seriesName),
+		);
+		if (!local) return null;
+		return {
+			x: chartRect.left + local.x,
+			y: chartRect.top + local.y,
+			width: local.width,
+			height: local.height,
+		};
+	}
+
+	private pickSeriesColor(
+		seriesName: string,
+		anchor: { left: number; top: number; width: number; height: number },
+	): void {
+		const doc = this.rootEl.ownerDocument;
+		const input = doc.createElement('input');
+		input.type = 'color';
 		input.value = toColorInputValue(this.currentSeriesColor(seriesName));
 		input.style.position = 'fixed';
-		input.style.left = '-9999px';
-		input.style.width = '0';
-		input.style.height = '0';
+		input.style.left = `${anchor.left}px`;
+		input.style.top = `${anchor.top}px`;
+		input.style.width = `${anchor.width}px`;
+		input.style.height = `${anchor.height}px`;
 		input.style.opacity = '0';
+		input.style.padding = '0';
+		input.style.margin = '0';
+		input.style.border = '0';
+		input.style.pointerEvents = 'none';
+		doc.body.appendChild(input);
 		const apply = () => {
 			const color = parseSeriesColors({ [seriesName]: input.value })[seriesName];
 			if (color) this.saveSeriesColor(seriesName, color);
