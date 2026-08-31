@@ -3,11 +3,14 @@ import { describe, it } from 'node:test';
 import { aggregateRows } from './aggregate.ts';
 import {
 	applySeriesColorOverrides,
+	colorPickerAnchorBox,
 	legendColorNames,
+	legendItemGroupFromZrTarget,
 	legendNameFromChartEvent,
 	legendNameFromZrTarget,
 	parseSeriesColors,
 	toColorInputValue,
+	zrElementChartRect,
 } from './seriesColors.ts';
 import { DEFAULT_EXCLUDED_TAGS, type ChartSettings, type RawRow } from './types.ts';
 
@@ -120,5 +123,45 @@ describe('toColorInputValue', () => {
 	it('normalizes hex for input[type=color]', () => {
 		assert.equal(toColorInputValue('#0F0'), '#00ff00');
 		assert.equal(toColorInputValue('not-a-color'), '#70b8ff');
+	});
+});
+
+describe('legend item picker anchor', () => {
+	const itemGroup = {
+		__legendDataIndex: 1,
+		parent: { __ecComponentInfo: { mainType: 'legend', index: 0 } },
+	};
+	const swatch = { style: { fill: 'green' }, parent: itemGroup };
+
+	it('walks to the legend item group for the named series', () => {
+		assert.equal(legendItemGroupFromZrTarget(swatch, ['east', 'west'], 'west'), itemGroup);
+		assert.equal(legendItemGroupFromZrTarget(swatch, ['east', 'west'], 'east'), null);
+	});
+
+	it('maps a ZRender local box through transformCoordToGlobal', () => {
+		const el = {
+			getBoundingRect: () => ({ x: 0, y: 0, width: 80, height: 14 }),
+			transformCoordToGlobal: (x: number, y: number) => [x + 40, y + 12],
+		};
+		assert.deepEqual(zrElementChartRect(el), { x: 40, y: 12, width: 80, height: 14 });
+	});
+
+	it('anchors the color input on the legend item, else the pointer', () => {
+		assert.deepEqual(
+			colorPickerAnchorBox({ x: 500, y: 80 }, { x: 120, y: 40, width: 90, height: 14 }, { x: 0, y: 0 }),
+			{ left: 120, top: 40, width: 90, height: 16 },
+		);
+		assert.deepEqual(colorPickerAnchorBox({ x: 500, y: 80 }, null, { x: 8, y: 8 }), {
+			left: 500,
+			top: 80,
+			width: 16,
+			height: 16,
+		});
+		assert.deepEqual(colorPickerAnchorBox(null, null, { x: 8, y: 8 }), {
+			left: 8,
+			top: 8,
+			width: 16,
+			height: 16,
+		});
 	});
 });
