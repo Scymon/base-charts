@@ -187,6 +187,109 @@
 	font-variant-numeric: tabular-nums;
 }
 
+.motion-chart-color-popover {
+	position: fixed;
+	z-index: var(--layer-popover, 80);
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	box-sizing: border-box;
+	width: 196px;
+	padding: 8px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m, 8px);
+	background: var(--background-secondary);
+	box-shadow: var(--shadow-s);
+	color: var(--text-normal);
+}
+
+.motion-chart-color-sv {
+	position: relative;
+	width: 180px;
+	height: 120px;
+	border-radius: var(--radius-s, 4px);
+	cursor: crosshair;
+	touch-action: none;
+}
+
+.motion-chart-color-sv-thumb {
+	position: absolute;
+	width: 12px;
+	height: 12px;
+	border: 2px solid #fff;
+	border-radius: 50%;
+	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+	transform: translate(-50%, -50%);
+	pointer-events: none;
+}
+
+.motion-chart-color-hue {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 180px;
+	height: 10px;
+	margin: 0;
+	padding: 0;
+	border: none;
+	border-radius: 999px;
+	background: linear-gradient(
+		to right,
+		#f00 0%,
+		#ff0 17%,
+		#0f0 33%,
+		#0ff 50%,
+		#00f 67%,
+		#f0f 83%,
+		#f00 100%
+	);
+}
+
+.motion-chart-color-hue::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	width: 12px;
+	height: 12px;
+	border: 2px solid var(--background-primary);
+	border-radius: 50%;
+	background: var(--text-normal);
+	cursor: pointer;
+}
+
+.motion-chart-color-hue::-moz-range-thumb {
+	width: 12px;
+	height: 12px;
+	border: 2px solid var(--background-primary);
+	border-radius: 50%;
+	background: var(--text-normal);
+	cursor: pointer;
+}
+
+.motion-chart-color-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.motion-chart-color-swatch {
+	flex: 0 0 auto;
+	width: 18px;
+	height: 18px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s, 4px);
+}
+
+.motion-chart-color-hex {
+	flex: 1 1 auto;
+	min-width: 0;
+	height: 22px;
+	padding: 0 6px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s, 4px);
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-family: var(--font-monospace, monospace);
+	font-size: var(--font-ui-small, 12px);
+}
+
 .motion-chart-ellipsis-tip {
 	position: absolute;
 	z-index: 7;
